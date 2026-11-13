@@ -39,6 +39,8 @@ public actor MCPSSETransport: MCPTransport {
         request.httpMethod = "GET"
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.timeoutInterval = 3600
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
         let (bytes, response) = try await session.bytes(for: request)

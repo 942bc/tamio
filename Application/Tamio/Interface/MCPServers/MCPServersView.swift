@@ -286,8 +286,8 @@ private struct MCPServerDetail: View {
     }
 }
 
-@MainActor
 enum MCPServerActions {
+    @MainActor
     static func delete(_ id: RDMCPServer.ID) {
         let store = TamioStore.shared
         let center = MCPClientCenter.shared

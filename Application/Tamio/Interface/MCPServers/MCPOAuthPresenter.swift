@@ -1,6 +1,7 @@
 import AppKit
 import AuthenticationServices
 import Foundation
+import TamioModule
 
 /// The system browser session for OAuth. `ASWebAuthenticationSession` needs a
 /// window to present from; this is the only part of the MCP client that is

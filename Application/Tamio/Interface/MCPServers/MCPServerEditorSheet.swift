@@ -127,7 +127,9 @@ struct MCPServerEditorSheet: View {
                 HStack(spacing: RX.Space.s2) {
                     Button {
                         if oauth.isSignedIn {
-                            oauth = MCPServerOAuth()
+                            oauth.accessToken = ""
+                            oauth.refreshToken = ""
+                            oauth.expiresAt = nil
                         } else {
                             signIn()
                         }
