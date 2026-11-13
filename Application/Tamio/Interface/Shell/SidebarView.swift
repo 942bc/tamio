@@ -75,6 +75,7 @@ struct SidebarView: View {
                 place(.identities, "Identities", icon: .identities, badge: store.identityGroup.shared.count)
                 place(.snippets, "Snippets", icon: .snippets, badge: store.snippetGroup.count)
                 place(.portForward, "Port Forward", icon: .portForward, badge: store.portForwardGroup.count)
+                place(.mcpServers, "MCP Servers", icon: .mcpServers, badge: store.mcpServerGroup.count)
 
                 let sessionOwners = router.openOwners.filter { !isLocalTerminalOwner($0) }
                 if !sessionOwners.isEmpty {
@@ -122,8 +123,9 @@ struct SidebarView: View {
         .pausesHitTestingWhileSidebarSlides()
     }
 
-    /// The shell on this Mac, always here: it shows the one already open
-    /// rather than opening another at every click.
+    /// The shell on this Mac, always here: it shows the one shown last
+    /// rather than opening another at every click. Its tabs live in the
+    /// terminal page.
     @ViewBuilder
     private var localPlace: some View {
         let locals = localTerminals
@@ -133,18 +135,6 @@ struct SidebarView: View {
             SidebarLabel("This Mac", icon: .local)
         }
         .accessibilityLabel(Text("This Mac"))
-        // Several shells on this Mac: one row each, as a server's terminals
-        // are listed under it.
-        if locals.count > 1 {
-            ForEach(locals) { context in
-                SidebarRow(isSelected: router.route == .terminal(context.id)) {
-                    router.route = .terminal(context.id)
-                } label: {
-                    TerminalSidebarRow(context: context)
-                }
-                .accessibilityLabel(context.sidebarTitle)
-            }
-        }
     }
 
     private var localTerminals: [TerminalManager.Context] {
@@ -275,6 +265,7 @@ enum SidebarIcon: String {
     case identities = "key"
     case snippets = "chevron.left.forwardslash.chevron.right"
     case portForward = "arrow.left.arrow.right"
+    case mcpServers = "network"
     case settings = "gearshape"
     case terminal
     case files = "folder"

@@ -163,7 +163,7 @@ public extension ShapeStyle where Self == Color {
     static var rxTerminalCursor: Color { RXPalette.terminalCursor }
 }
 
-enum RXPalette {
+public enum RXPalette {
     static let window = Color(rxLight: 0xEEF0_F5FF, dark: 0x1B1C_1FFF)
     static let sidebarSelected = Color(rxLight: 0xE1E3_EAFF, dark: 0x3436_3BFF)
     static let surface = Color(rxLight: 0xFFFF_FFFF, dark: 0x2627_2BFF)

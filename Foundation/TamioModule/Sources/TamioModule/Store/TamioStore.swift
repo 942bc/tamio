@@ -82,6 +82,12 @@ public class TamioStore: ObservableObject, @unchecked Sendable {
         ) {
             portForwardGroup = read
         }
+        if let read = readEncryptedDefault(
+            from: .mcpServerGroupEncrypted,
+            mcpServerGroup.self
+        ) {
+            mcpServerGroup = read
+        }
 
         // Property observers do not run during init; seed the worker
         // snapshot with what was just loaded.
@@ -281,6 +287,18 @@ public class TamioStore: ObservableObject, @unchecked Sendable {
             storeEncryptedDefault(
                 to: .portForwardEncrypted,
                 with: portForwardGroup
+            )
+        }
+    }
+
+    /// Remote MCP servers and their tokens. Kept encrypted with the rest of
+    /// the store, on this Mac only: CloudSync never reads this group, and its
+    /// tokens do not go to Keychain.
+    @Published public var mcpServerGroup: RDMCPServerGroup = .init() {
+        didSet {
+            storeEncryptedDefault(
+                to: .mcpServerGroupEncrypted,
+                with: mcpServerGroup
             )
         }
     }

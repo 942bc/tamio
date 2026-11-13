@@ -17,6 +17,7 @@ enum Route: Hashable {
     case identities
     case snippets
     case portForward
+    case mcpServers
     case settings
     case terminal(UUID)
     case monitor(UUID)
@@ -31,6 +32,11 @@ final class AppRouter: ObservableObject {
 
     @Published var route: Route = .home {
         didSet {
+            if case let .terminal(id) = route,
+               TerminalManager.shared.sessionContexts.first(where: { $0.id == id })?.remoteType == .local
+            {
+                lastLocalTerminal = id
+            }
             if !route.isSession {
                 lastPlace = route
             } else if let owner = owner(of: route) {
@@ -39,6 +45,8 @@ final class AppRouter: ObservableObject {
             }
         }
     }
+    /// The local shell shown last, for the sidebar's This Mac row.
+    private(set) var lastLocalTerminal: UUID?
     /// The page each server (or Quick Connect terminal) showed last, so its
     /// sidebar row returns to the same tool.
     private var lastRoute: [SessionOwner: Route] = [:]
@@ -148,19 +156,48 @@ final class AppRouter: ObservableObject {
         route = .terminal(context.id)
     }
 
-    /// The shell on this Mac, for the sidebar's This Mac row: the one already
-    /// open, a closed one started again in its place, or a new one. Another
-    /// shell is opened from the File menu, not by clicking the row again.
+    /// The shell on this Mac, for the sidebar's This Mac row: the one shown
+    /// last, the last open one, a closed one started again, or a new one.
     func showLocalTerminal() {
         let manager = TerminalManager.shared
-        if let open = manager.sessionContexts.last(where: { $0.remoteType == .local && !$0.closed }) {
+        let locals = manager.sessionContexts.filter { $0.remoteType == .local }
+        if let remembered = locals.first(where: { $0.id == lastLocalTerminal }) {
+            if remembered.closed {
+                let fresh = manager.restartLocalSession(remembered)
+                route = .terminal(fresh.id)
+            } else {
+                route = .terminal(remembered.id)
+            }
+            return
+        }
+        if let open = locals.last(where: { !$0.closed }) {
             route = .terminal(open.id)
-        } else if let closed = manager.sessionContexts.last(where: { $0.remoteType == .local }) {
+        } else if let closed = locals.last {
             let fresh = manager.restartLocalSession(closed)
             route = .terminal(fresh.id)
         } else {
             openLocalTerminal()
         }
+    }
+
+    /// Closes a local shell and shows the tab beside it. `closeSession`
+    /// publishes the change synchronously, which sends the route home; the
+    /// tab to show is taken before closing, not from the route after.
+    func closeLocalTerminal(_ id: UUID) {
+        let manager = TerminalManager.shared
+        let locals = manager.sessionContexts.filter { $0.remoteType == .local }
+        guard let index = locals.firstIndex(where: { $0.id == id }) else { return }
+        let wasActive = route == .terminal(id)
+        let neighbor = locals.dropFirst(index + 1).first ?? locals.prefix(index).last
+        manager.closeSession(withContextID: id)
+        if wasActive {
+            if let neighbor {
+                route = .terminal(neighbor.id)
+            } else {
+                route = lastPlace
+            }
+        }
+        if lastLocalTerminal == id { lastLocalTerminal = nil }
     }
 
     func openTerminal(command: SSHCommandReader) {

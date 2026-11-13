@@ -25,6 +25,10 @@ struct TerminalPage: View {
     var body: some View {
         HStack(alignment: .top, spacing: RX.Space.s3) {
             VStack(spacing: 0) {
+                if context.remoteType == .local {
+                    LocalTerminalTabBar(activeID: context.id)
+                        .padding(.bottom, RX.Space.s2)
+                }
                 VStack(spacing: 0) {
                     if context.closed {
                         disconnectedBanner

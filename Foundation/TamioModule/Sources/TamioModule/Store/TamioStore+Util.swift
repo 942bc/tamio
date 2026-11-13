@@ -62,6 +62,7 @@ public extension TamioStore {
         case snippetGroupEncrypted
         case recentRecordEncrypted
         case portForwardEncrypted
+        case mcpServerGroupEncrypted
         case machineRedacted
         case licenseAgreed
         case openInterfaceAutomatically

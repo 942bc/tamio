@@ -130,7 +130,7 @@ struct RXTabsLayout: Layout {
     }
 }
 
-extension RXPalette {
+public extension RXPalette {
     /// The track of a row of tabs.
     static let tabTrack = Color(rxLight: 0x0000_000F, dark: 0xFFFF_FF12)
     /// The selected tab, raised off the track.

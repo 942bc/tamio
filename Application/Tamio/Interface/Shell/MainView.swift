@@ -157,6 +157,8 @@ struct MainView: View {
             SnippetsView()
         case .portForward:
             PortForwardView()
+        case .mcpServers:
+            MCPServersView()
         case .settings, .terminal, .monitor, .transfer:
             EmptyView()
         }

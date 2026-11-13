@@ -17,6 +17,19 @@ the user. To release, rename that heading to the version and date
 - **This Mac is in the sidebar.** A row under Home opens a shell on this
   Mac — the one already open, or a new one — instead of going through the
   File menu.
+- **This Mac keeps several shells.** Its page has a tab for each one, with
+  + to open another and × to close it; the sidebar's This Mac row returns
+  to the one shown last.
+- **MCP servers can be saved.** Manage › MCP Servers keeps remote MCP
+  servers and their sign-in details on this Mac, encrypted with the rest of
+  the store and never synced.
+- **MCP tools can be listed and called.** A saved MCP server connects over
+  HTTP+SSE, its tools appear in MCP Servers, and a tool's arguments can be
+  filled in a form or as JSON; results show in place.
+- **Remote MCP servers can sign in with OAuth.** On a 401 Tamio discovers
+  the authorization server, registers a client, opens the browser for a
+  PKCE sign-in, keeps the token encrypted on this Mac, and refreshes it
+  before it expires; endpoints and a client ID can be filled in by hand.
 
 ### Fixed
 - **The app no longer crashes when a page with a toolbar menu opens.** Going
