@@ -30,9 +30,9 @@ the user. To release, rename that heading to the version and date
   the authorization server, registers a client, opens the browser for a
   PKCE sign-in, keeps the token encrypted on this Mac, and refreshes it
   before it expires; endpoints and a client ID can be filled in by hand.
-- **MCP traffic can be watched.** A Debug Log in MCP Servers shows each
-  request, response, SSE event and OAuth step, with headers and bodies, in
-  memory only.
+- **MCP traffic can be watched.** A console pinned to the bottom of MCP
+  Servers shows each request, response, SSE event and OAuth step, with
+  headers and bodies, in memory only.
 
 ### Fixed
 - **MCP servers using Streamable HTTP connect.** The client only spoke the

@@ -174,7 +174,7 @@ enum MCPOAuthCoordinator {
     }
 
     private static func log(_ text: String) {
-        MCPDebugLog.shared.record(server: "OAuth", direction: .info, text: text)
+        MCPDebugLog.shared.record(server: "OAuth", direction: .info, text: text, channel: .oauth)
     }
 
     private static func jsonString<T: Encodable>(_ value: T) -> String {

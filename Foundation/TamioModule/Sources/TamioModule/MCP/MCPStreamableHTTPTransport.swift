@@ -85,10 +85,10 @@ public actor MCPStreamableHTTPTransport: MCPTransport {
                 guard let data = event.data.data(using: .utf8),
                       let message = try? JSONDecoder().decode(JSONValue.self, from: data)
                 else {
-                    await log(.inbound, event.data)
+                    await log(.inbound, event.data, channel: .sse)
                     continue
                 }
-                await log(.inbound, event.data)
+                await log(.inbound, event.data, channel: .sse)
                 receiveProtocolVersion(from: message)
                 continuation.yield(message)
             }
@@ -127,7 +127,16 @@ public actor MCPStreamableHTTPTransport: MCPTransport {
         fields.map { "\($0.key): \($0.value)" }.sorted().joined(separator: "\n")
     }
 
-    private func log(_ direction: MCPDebugLog.Direction, _ text: String) async {
-        await MCPDebugLog.shared.record(server: label, direction: direction, text: text)
+    private func log(
+        _ direction: MCPDebugLog.Direction,
+        _ text: String,
+        channel: MCPDebugLog.Channel = .http
+    ) async {
+        await MCPDebugLog.shared.record(
+            server: label,
+            direction: direction,
+            text: text,
+            channel: channel
+        )
     }
 }

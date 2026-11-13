@@ -18,6 +18,22 @@ public final class MCPDebugLog: ObservableObject {
         case inbound = "←"
         case info = "·"
         case error = "!"
+
+        public var label: String {
+            switch self {
+            case .outbound: return String(localized: "SEND")
+            case .inbound: return String(localized: "RECV")
+            case .info: return String(localized: "INFO")
+            case .error: return String(localized: "ERROR")
+            }
+        }
+    }
+
+    public enum Channel: String, Sendable {
+        case http = "HTTP"
+        case sse = "SSE"
+        case oauth = "OAuth"
+        case app = "APP"
     }
 
     public struct Entry: Identifiable, Sendable {
@@ -25,6 +41,7 @@ public final class MCPDebugLog: ObservableObject {
         public let date: Date
         public let server: String
         public let direction: Direction
+        public let channel: Channel
         public let text: String
     }
 
@@ -35,7 +52,12 @@ public final class MCPDebugLog: ObservableObject {
 
     private init() {}
 
-    public func record(server: String, direction: Direction, text: String) {
+    public func record(
+        server: String,
+        direction: Direction,
+        text: String,
+        channel: Channel = .app
+    ) {
         let formatted = Self.format(text)
         let clipped = formatted.count > Self.textLimit ? String(formatted.prefix(Self.textLimit)) + "\n…" : formatted
         entries.append(Entry(
@@ -43,6 +65,7 @@ public final class MCPDebugLog: ObservableObject {
             date: Date(),
             server: server,
             direction: direction,
+            channel: channel,
             text: clipped
         ))
         if entries.count > Self.limit {

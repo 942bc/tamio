@@ -109,7 +109,7 @@ public actor MCPClient {
         guard let id = message["id"]?.int else { return }
         if let error = message["error"] {
             let text = error["message"]?.string ?? String(localized: "The server refused the request.")
-            await log(.error, "\(id): \(text)")
+            await log(.error, "\(id): \(text)", channel: .http)
             fail(id, MCPClientError.rpc(text))
             return
         }
@@ -143,7 +143,7 @@ public actor MCPClient {
             do {
                 return try await group.next()!
             } catch {
-                await log(.error, "\(method): \(error.localizedDescription)")
+                await log(.error, "\(method): \(error.localizedDescription)", channel: .http)
                 fail(id, error)
                 throw error
             }
@@ -186,7 +186,16 @@ public actor MCPClient {
         await log(.error, error.localizedDescription)
     }
 
-    private func log(_ direction: MCPDebugLog.Direction, _ text: String) async {
-        await MCPDebugLog.shared.record(server: server.displayName, direction: direction, text: text)
+    private func log(
+        _ direction: MCPDebugLog.Direction,
+        _ text: String,
+        channel: MCPDebugLog.Channel = .app
+    ) async {
+        await MCPDebugLog.shared.record(
+            server: server.displayName,
+            direction: direction,
+            text: text,
+            channel: channel
+        )
     }
 }

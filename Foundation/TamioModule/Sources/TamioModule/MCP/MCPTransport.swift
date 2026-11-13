@@ -75,7 +75,8 @@ private final class SSEStream: NSObject, URLSessionDataDelegate, @unchecked Send
             await MCPDebugLog.shared.record(
                 server: label,
                 direction: .inbound,
-                text: "HTTP \(http.statusCode)\n\(Self.headerText(http.allHeaderFields))"
+                text: "HTTP \(http.statusCode)\n\(Self.headerText(http.allHeaderFields))",
+                channel: .http
             )
         }
         if (200 ..< 300).contains(http.statusCode) {
@@ -238,14 +239,14 @@ public actor MCPSSETransport: MCPTransport {
 
     private func receive(_ event: MCPSSEEvent, base: URL) async {
         if let name = event.event, name != "message" {
-            await log(.info, "SSE event: \(name)")
+            await log(.info, "SSE event: \(name)", channel: .sse)
         }
         let value = event.data.trimmingCharacters(in: .whitespacesAndNewlines)
         let looksLikeEndpoint = event.event == "endpoint"
             || (event.event == nil && (value.hasPrefix("/") || value.hasPrefix("http")))
         if looksLikeEndpoint {
             if let url = URL(string: value, relativeTo: base)?.absoluteURL {
-                await log(.info, "endpoint \(url.absoluteString)")
+                await log(.info, "endpoint \(url.absoluteString)", channel: .sse)
                 endpointWaiters.forEach { $0.resume(returning: url) }
                 endpointWaiters.removeAll()
             }
@@ -254,10 +255,10 @@ public actor MCPSSETransport: MCPTransport {
         guard let data = event.data.data(using: .utf8),
               let message = try? JSONDecoder().decode(JSONValue.self, from: data)
         else {
-            await log(.inbound, event.data)
+            await log(.inbound, event.data, channel: .sse)
             return
         }
-        await log(.inbound, event.data)
+        await log(.inbound, event.data, channel: .sse)
         continuation.yield(message)
     }
 
@@ -268,7 +269,7 @@ public actor MCPSSETransport: MCPTransport {
     private func fail(_ error: Error) async {
         guard !finished else { return }
         finished = true
-        await log(.error, error.localizedDescription)
+        await log(.error, error.localizedDescription, channel: .sse)
         endpointWaiters.forEach { $0.resume(throwing: error) }
         endpointWaiters.removeAll()
         continuation.finish(throwing: error)
@@ -282,7 +283,16 @@ public actor MCPSSETransport: MCPTransport {
         fields.map { "\($0.key): \($0.value)" }.sorted().joined(separator: "\n")
     }
 
-    private func log(_ direction: MCPDebugLog.Direction, _ text: String) async {
-        await MCPDebugLog.shared.record(server: label, direction: direction, text: text)
+    private func log(
+        _ direction: MCPDebugLog.Direction,
+        _ text: String,
+        channel: MCPDebugLog.Channel = .http
+    ) async {
+        await MCPDebugLog.shared.record(
+            server: label,
+            direction: direction,
+            text: text,
+            channel: channel
+        )
     }
 }

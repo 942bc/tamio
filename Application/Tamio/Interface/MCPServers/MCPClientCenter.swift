@@ -30,7 +30,8 @@ final class MCPClientCenter: ObservableObject {
         MCPDebugLog.shared.record(
             server: server.displayName,
             direction: .info,
-            text: "Connect \(server.endpoint)"
+            text: "Connect \(server.endpoint)",
+            channel: .app
         )
         if case let .oauth(oauth) = server.auth,
            let expiresAt = oauth.expiresAt,
