@@ -43,6 +43,13 @@ public struct MCPServerOAuth: Codable, Equatable, Sendable {
     public var isSignedIn: Bool { !accessToken.isEmpty || !refreshToken.isEmpty }
 }
 
+public enum MCPTransportKind: String, Codable, CaseIterable, Sendable {
+    /// MCP 2025-03-26 and later: one POST endpoint, JSON or SSE responses.
+    case streamableHTTP
+    /// MCP 2024-11-05: a GET event stream that names the POST endpoint.
+    case sse
+}
+
 public struct RDMCPServer: Identifiable, Codable, Equatable, Sendable, RDGroupItem {
     public init() {}
 
@@ -52,7 +59,8 @@ public struct RDMCPServer: Identifiable, Codable, Equatable, Sendable, RDGroupIt
         endpoint: String = "",
         auth: MCPAuth = .none,
         comment: String = "",
-        lastConnected: Date? = nil
+        lastConnected: Date? = nil,
+        transport: MCPTransportKind? = nil
     ) {
         self.id = id
         self.name = name
@@ -60,6 +68,7 @@ public struct RDMCPServer: Identifiable, Codable, Equatable, Sendable, RDGroupIt
         self.auth = auth
         self.comment = comment
         self.lastConnected = lastConnected
+        self.transport = transport
     }
 
     public var id: UUID = .init()
@@ -68,6 +77,11 @@ public struct RDMCPServer: Identifiable, Codable, Equatable, Sendable, RDGroupIt
     public var auth: MCPAuth = .none
     public var comment: String = ""
     public var lastConnected: Date?
+    /// Nil in servers saved before the transport was selectable; those used
+    /// the older HTTP+SSE transport, so they keep it.
+    public var transport: MCPTransportKind?
+
+    public var transportKind: MCPTransportKind { transport ?? .sse }
 
     public var isPlaceholder: Bool { name.isEmpty && endpoint.isEmpty }
     public var displayName: String { name.isEmpty ? endpoint : name }

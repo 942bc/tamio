@@ -25,6 +25,7 @@ struct MCPServerEditorSheet: View {
     @State private var name = ""
     @State private var endpoint = ""
     @State private var comment = ""
+    @State private var transport: MCPTransportKind = .streamableHTTP
     @State private var kind: MCPAuthKind = .none
     @State private var token = ""
     @State private var headers: [MCPHeader] = []
@@ -40,9 +41,15 @@ struct MCPServerEditorSheet: View {
                     TextField("Weather", text: $name)
                         .textFieldStyle(.rx)
                 }
-                RXField("SSE URL", help: "The server's text/event-stream endpoint.", error: endpointError) {
-                    TextField("https://example.com/sse", text: $endpoint)
+                RXField("Endpoint", help: "The server's MCP endpoint.", error: endpointError) {
+                    TextField("https://example.com/mcp", text: $endpoint)
                         .textFieldStyle(.rxMono)
+                }
+                RXField("Transport", help: "Most current MCP servers use Streamable HTTP; older ones use SSE.") {
+                    RXPicker(selection: $transport, options: [
+                        .init(.streamableHTTP, "Streamable HTTP"),
+                        .init(.sse, "HTTP + SSE (legacy)"),
+                    ])
                 }
                 RXField("Authentication") {
                     RXPicker(selection: $kind, options: MCPAuthKind.allCases.map { .init($0, $0.title) })
@@ -201,6 +208,7 @@ struct MCPServerEditorSheet: View {
         name = value.name
         endpoint = value.endpoint
         comment = value.comment
+        transport = value.transportKind
         switch value.auth {
         case .none:
             kind = .none
@@ -232,6 +240,7 @@ struct MCPServerEditorSheet: View {
         value.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         value.endpoint = trimmedEndpoint
         value.comment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        value.transport = transport
         switch kind {
         case .none:
             value.auth = .none

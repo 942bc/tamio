@@ -35,6 +35,10 @@ the user. To release, rename that heading to the version and date
   memory only.
 
 ### Fixed
+- **MCP servers using Streamable HTTP connect.** The client only spoke the
+  older HTTP+SSE transport and waited for an endpoint event current servers
+  never send; each server now has a Transport choice, Streamable HTTP by
+  default.
 - **MCP servers can use plain http:// addresses.** The editor only allowed
   HTTP to localhost; a development MCP server on the local network can now
   be saved and connected too.

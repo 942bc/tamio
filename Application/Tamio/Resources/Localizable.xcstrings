@@ -22303,6 +22303,102 @@
           }
         }
       }
+    },
+    "Transport": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transport"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "传输方式"
+          }
+        }
+      }
+    },
+    "Streamable HTTP": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streamable HTTP"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streamable HTTP"
+          }
+        }
+      }
+    },
+    "HTTP + SSE (legacy)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP + SSE (legacy)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP + SSE（旧版）"
+          }
+        }
+      }
+    },
+    "Most current MCP servers use Streamable HTTP; older ones use SSE.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Most current MCP servers use Streamable HTTP; older ones use SSE."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大多数新版 MCP 服务器用 Streamable HTTP；旧服务器用 SSE。"
+          }
+        }
+      }
+    },
+    "Endpoint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Endpoint"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端点"
+          }
+        }
+      }
+    },
+    "The server's MCP endpoint.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server's MCP endpoint."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器的 MCP 端点。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

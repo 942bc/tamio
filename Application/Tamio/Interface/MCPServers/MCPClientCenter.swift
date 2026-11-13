@@ -13,7 +13,7 @@ final class MCPClientCenter: ObservableObject {
     @Published private(set) var toolLists: [UUID: [MCPTool]] = [:]
 
     private var clients: [UUID: MCPClient] = [:]
-    private var transports: [UUID: MCPSSETransport] = [:]
+    private var transports: [UUID: any MCPTransport] = [:]
 
     private init() {}
 
@@ -76,7 +76,9 @@ final class MCPClientCenter: ObservableObject {
     private func connectOnce(_ server: RDMCPServer) async throws {
         await disconnect(server.id)
         states[server.id] = .connecting
-        let transport = MCPSSETransport(label: server.displayName)
+        let transport: any MCPTransport = server.transportKind == .sse
+            ? MCPSSETransport(label: server.displayName)
+            : MCPStreamableHTTPTransport(label: server.displayName)
         let client = MCPClient(server: server, transport: transport, headers: Self.headers(for: server.auth))
         transports[server.id] = transport
         clients[server.id] = client

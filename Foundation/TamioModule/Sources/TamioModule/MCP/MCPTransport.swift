@@ -3,8 +3,10 @@
 //  TamioModule
 //
 //  The 2024-11-05 HTTP+SSE transport: a GET for the event stream, and
-//  JSON-RPC POSTed to the endpoint that stream announces. The protocol keeps
-//  MCPClient testable without a network.
+//  JSON-RPC POSTed to the endpoint that stream announces. The GET is read
+//  through URLSessionDataDelegate: some servers answer a live stream with
+//  Transfer-Encoding: Identity, which URLSession's AsyncBytes buffers until
+//  the connection ends.
 //
 
 import Foundation
@@ -17,13 +19,117 @@ public protocol MCPTransport: AnyObject, Sendable {
     func close() async
 }
 
+/// One live event stream: URLSession hands over each chunk as it arrives.
+private final class SSEStream: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let label: String
+    private let lock = NSLock()
+    private var responseContinuation: CheckedContinuation<AsyncThrowingStream<Data, Error>, Error>?
+    private var session: URLSession?
+    private var task: URLSessionDataTask?
+    private let stream: AsyncThrowingStream<Data, Error>
+    private let continuation: AsyncThrowingStream<Data, Error>.Continuation
+
+    init(label: String) {
+        self.label = label
+        let (stream, continuation) = AsyncThrowingStream<Data, Error>.makeStream()
+        self.stream = stream
+        self.continuation = continuation
+        super.init()
+    }
+
+    func start(_ request: URLRequest) async throws -> AsyncThrowingStream<Data, Error> {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.lock()
+            responseContinuation = continuation
+            lock.unlock()
+
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.timeoutIntervalForRequest = 3600
+            configuration.timeoutIntervalForResource = 3600
+            let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+            self.session = session
+            let task = session.dataTask(with: request)
+            self.task = task
+            task.resume()
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        session?.invalidateAndCancel()
+        continuation.finish()
+    }
+
+    func urlSession(
+        _: URLSession,
+        dataTask _: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        guard let http = response as? HTTPURLResponse else {
+            completionHandler(.cancel)
+            finish(.failure(MCPClientError.transport(String(localized: "The server's answer was not HTTP."))))
+            return
+        }
+        Task {
+            await MCPDebugLog.shared.record(
+                server: label,
+                direction: .inbound,
+                text: "HTTP \(http.statusCode)\n\(Self.headerText(http.allHeaderFields))"
+            )
+        }
+        if (200 ..< 300).contains(http.statusCode) {
+            completionHandler(.allow)
+            finish(.success(stream))
+        } else {
+            let challenge = http.value(forHTTPHeaderField: "WWW-Authenticate")
+            let error: MCPClientError = http.statusCode == 401
+                ? .unauthorized(challenge)
+                : .http(http.statusCode)
+            completionHandler(.cancel)
+            finish(.failure(error))
+            continuation.finish(throwing: error)
+        }
+    }
+
+    func urlSession(_: URLSession, dataTask _: URLSessionDataTask, didReceive data: Data) {
+        continuation.yield(data)
+    }
+
+    func urlSession(_: URLSession, task _: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            continuation.finish(throwing: error)
+        } else {
+            continuation.finish()
+        }
+        session?.finishTasksAndInvalidate()
+    }
+
+    private func finish(_ result: Result<AsyncThrowingStream<Data, Error>, Error>) {
+        lock.lock()
+        let continuation = responseContinuation
+        responseContinuation = nil
+        lock.unlock()
+        switch result {
+        case let .success(stream):
+            continuation?.resume(returning: stream)
+        case let .failure(error):
+            continuation?.resume(throwing: error)
+        }
+    }
+
+    private static func headerText(_ fields: [AnyHashable: Any]) -> String {
+        fields.map { "\($0.key): \($0.value)" }.sorted().joined(separator: "\n")
+    }
+}
+
 public actor MCPSSETransport: MCPTransport {
     public nonisolated let messages: AsyncThrowingStream<JSONValue, Error>
     private nonisolated let continuation: AsyncThrowingStream<JSONValue, Error>.Continuation
 
     private let label: String
     private let session: URLSession
-    private var task: Task<Void, Never>?
+    private var stream: SSEStream?
     private var endpointWaiters: [CheckedContinuation<URL, Error>] = []
     private var finished = false
     private var closed = false
@@ -46,32 +152,16 @@ public actor MCPSSETransport: MCPTransport {
         headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
         await log(.outbound, "GET \(endpoint.absoluteString)\n\(headerText(headers))")
-        let (bytes, response) = try await session.bytes(for: request)
-        if let http = response as? HTTPURLResponse {
-            await log(.inbound, "HTTP \(http.statusCode)\n\(headerText(http.allHeaderFields))")
-            if !(200 ..< 300).contains(http.statusCode) {
-                let challenge = http.value(forHTTPHeaderField: "WWW-Authenticate")
-                await log(.error, "HTTP \(http.statusCode)" + (challenge.map { " · \($0)" } ?? ""))
-                if http.statusCode == 401 {
-                    throw MCPClientError.unauthorized(challenge)
-                }
-                throw MCPClientError.http(http.statusCode)
+        let stream = SSEStream(label: label)
+        self.stream = stream
+        do {
+            let chunks = try await stream.start(request)
+            Task { [weak self] in
+                await self?.read(chunks, base: endpoint)
             }
-        }
-
-        task = Task { [weak self] in
-            guard let self else { return }
-            var parser = MCPSSEParser()
-            do {
-                for try await line in bytes.lines {
-                    if let event = parser.consume(line: line) {
-                        await self.receive(event, base: endpoint)
-                    }
-                }
-                await self.fail(MCPClientError.transport(String(localized: "The server closed the stream.")))
-            } catch {
-                await self.fail(MCPClientError.transport(error.localizedDescription))
-            }
+        } catch {
+            await log(.error, error.localizedDescription)
+            throw error
         }
 
         return try await withThrowingTaskGroup(of: URL.self) { group in
@@ -120,16 +210,40 @@ public actor MCPSSETransport: MCPTransport {
     public func close() async {
         guard !closed else { return }
         closed = true
-        task?.cancel()
+        stream?.cancel()
+        stream = nil
         await fail(MCPClientError.transport(String(localized: "Disconnected.")))
+    }
+
+    private func read(_ chunks: AsyncThrowingStream<Data, Error>, base: URL) async {
+        var parser = MCPSSEParser()
+        var buffer = Data()
+        do {
+            for try await chunk in chunks {
+                buffer.append(chunk)
+                while let newline = buffer.firstIndex(of: 0x0A) {
+                    let lineData = buffer[buffer.startIndex ..< newline]
+                    buffer.removeSubrange(buffer.startIndex ... newline)
+                    let line = String(decoding: lineData, as: UTF8.self)
+                    if let event = parser.consume(line: line) {
+                        await receive(event, base: base)
+                    }
+                }
+            }
+            await fail(MCPClientError.transport(String(localized: "The server closed the stream.")))
+        } catch {
+            await fail(MCPClientError.transport(error.localizedDescription))
+        }
     }
 
     private func receive(_ event: MCPSSEEvent, base: URL) async {
         if let name = event.event, name != "message" {
             await log(.info, "SSE event: \(name)")
         }
-        if event.event == "endpoint" {
-            let value = event.data.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = event.data.trimmingCharacters(in: .whitespacesAndNewlines)
+        let looksLikeEndpoint = event.event == "endpoint"
+            || (event.event == nil && (value.hasPrefix("/") || value.hasPrefix("http")))
+        if looksLikeEndpoint {
             if let url = URL(string: value, relativeTo: base)?.absoluteURL {
                 await log(.info, "endpoint \(url.absoluteString)")
                 endpointWaiters.forEach { $0.resume(returning: url) }
