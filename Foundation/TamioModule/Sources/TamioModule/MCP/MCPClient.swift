@@ -32,6 +32,7 @@ public actor MCPClient {
             throw MCPClientError.invalidEndpoint(server.endpoint)
         }
         state = .connecting
+        await log(.info, "Connecting to \(endpoint.absoluteString)")
         postEndpoint = try await transport.open(endpoint: endpoint, headers: headers)
         startReading()
         let result = try await request("initialize", params: .object([
@@ -50,6 +51,7 @@ public actor MCPClient {
             version: info?["version"]?.string ?? ""
         )
         state = .ready(serverInfo)
+        await log(.info, "Connected: \(serverInfo.name) \(serverInfo.version) · protocol \(protocolVersion)")
         return serverInfo
     }
 
@@ -83,6 +85,7 @@ public actor MCPClient {
         pending.removeAll()
         open.values.forEach { $0.resume(throwing: MCPClientError.notConnected) }
         state = .idle
+        await log(.info, "Disconnected")
     }
 
     private static var appVersion: String {
@@ -102,12 +105,12 @@ public actor MCPClient {
         }
     }
 
-    private func receive(_ message: JSONValue) {
+    private func receive(_ message: JSONValue) async {
         guard let id = message["id"]?.int else { return }
         if let error = message["error"] {
-            fail(id, MCPClientError.rpc(
-                error["message"]?.string ?? String(localized: "The server refused the request.")
-            ))
+            let text = error["message"]?.string ?? String(localized: "The server refused the request.")
+            await log(.error, "\(id): \(text)")
+            fail(id, MCPClientError.rpc(text))
             return
         }
         guard let result = message["result"],
@@ -140,6 +143,7 @@ public actor MCPClient {
             do {
                 return try await group.next()!
             } catch {
+                await log(.error, "\(method): \(error.localizedDescription)")
                 fail(id, error)
                 throw error
             }
@@ -174,10 +178,15 @@ public actor MCPClient {
         pending.removeValue(forKey: id)?.resume(throwing: error)
     }
 
-    private func failAll(_ error: Error) {
+    private func failAll(_ error: Error) async {
         let open = pending
         pending.removeAll()
         open.values.forEach { $0.resume(throwing: error) }
         state = .failed(error.localizedDescription)
+        await log(.error, error.localizedDescription)
+    }
+
+    private func log(_ direction: MCPDebugLog.Direction, _ text: String) async {
+        await MCPDebugLog.shared.record(server: server.displayName, direction: direction, text: text)
     }
 }

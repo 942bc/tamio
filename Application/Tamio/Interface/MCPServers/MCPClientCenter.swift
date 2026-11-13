@@ -27,6 +27,11 @@ final class MCPClientCenter: ObservableObject {
     func connect(_ server: RDMCPServer) async {
         var server = server
         states[server.id] = .connecting
+        MCPDebugLog.shared.record(
+            server: server.displayName,
+            direction: .info,
+            text: "Connect \(server.endpoint)"
+        )
         if case let .oauth(oauth) = server.auth,
            let expiresAt = oauth.expiresAt,
            expiresAt < Date().addingTimeInterval(60),
@@ -71,7 +76,7 @@ final class MCPClientCenter: ObservableObject {
     private func connectOnce(_ server: RDMCPServer) async throws {
         await disconnect(server.id)
         states[server.id] = .connecting
-        let transport = MCPSSETransport()
+        let transport = MCPSSETransport(label: server.displayName)
         let client = MCPClient(server: server, transport: transport, headers: Self.headers(for: server.auth))
         transports[server.id] = transport
         clients[server.id] = client

@@ -170,19 +170,17 @@ struct MCPServerEditorSheet: View {
     }
 
     private var endpointError: String? {
-        guard let url = URL(string: trimmedEndpoint), let scheme = url.scheme?.lowercased() else {
-            return String(localized: "Enter an https:// URL.")
+        guard let url = URL(string: trimmedEndpoint),
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host,
+              !host.isEmpty
+        else {
+            return String(localized: "Enter an http:// or https:// URL.")
         }
-        if scheme == "https" {
-            return url.host == nil ? String(localized: "Enter an https:// URL.") : nil
+        guard scheme == "http" || scheme == "https" else {
+            return String(localized: "Enter an http:// or https:// URL.")
         }
-        if scheme == "http" {
-            let host = url.host?.lowercased() ?? ""
-            return ["localhost", "127.0.0.1"].contains(host)
-                ? nil
-                : String(localized: "Only https://, or http:// to localhost.")
-        }
-        return String(localized: "Only https://, or http:// to localhost.")
+        return nil
     }
 
     private var canSave: Bool {

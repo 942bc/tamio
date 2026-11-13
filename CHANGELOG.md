@@ -30,8 +30,14 @@ the user. To release, rename that heading to the version and date
   the authorization server, registers a client, opens the browser for a
   PKCE sign-in, keeps the token encrypted on this Mac, and refreshes it
   before it expires; endpoints and a client ID can be filled in by hand.
+- **MCP traffic can be watched.** A Debug Log in MCP Servers shows each
+  request, response, SSE event and OAuth step, with headers and bodies, in
+  memory only.
 
 ### Fixed
+- **MCP servers can use plain http:// addresses.** The editor only allowed
+  HTTP to localhost; a development MCP server on the local network can now
+  be saved and connected too.
 - **The app no longer crashes when a page with a toolbar menu opens.** Going
   from Home to Servers (or any page whose toolbar carries a menu such as
   Privacy) could abort Tamio: AppKit asked the Lucide icon it draws there for

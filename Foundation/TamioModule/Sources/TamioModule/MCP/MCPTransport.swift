@@ -21,16 +21,18 @@ public actor MCPSSETransport: MCPTransport {
     public nonisolated let messages: AsyncThrowingStream<JSONValue, Error>
     private nonisolated let continuation: AsyncThrowingStream<JSONValue, Error>.Continuation
 
+    private let label: String
     private let session: URLSession
     private var task: Task<Void, Never>?
     private var endpointWaiters: [CheckedContinuation<URL, Error>] = []
     private var finished = false
     private var closed = false
 
-    public init(session: URLSession = .shared) {
+    public init(label: String = "MCP", session: URLSession = .shared) {
         let (stream, continuation) = AsyncThrowingStream<JSONValue, Error>.makeStream()
         messages = stream
         self.continuation = continuation
+        self.label = label
         self.session = session
     }
 
@@ -43,12 +45,18 @@ public actor MCPSSETransport: MCPTransport {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
+        await log(.outbound, "GET \(endpoint.absoluteString)\n\(headerText(headers))")
         let (bytes, response) = try await session.bytes(for: request)
-        if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
-            if http.statusCode == 401 {
-                throw MCPClientError.unauthorized(http.value(forHTTPHeaderField: "WWW-Authenticate"))
+        if let http = response as? HTTPURLResponse {
+            await log(.inbound, "HTTP \(http.statusCode)\n\(headerText(http.allHeaderFields))")
+            if !(200 ..< 300).contains(http.statusCode) {
+                let challenge = http.value(forHTTPHeaderField: "WWW-Authenticate")
+                await log(.error, "HTTP \(http.statusCode)" + (challenge.map { " · \($0)" } ?? ""))
+                if http.statusCode == 401 {
+                    throw MCPClientError.unauthorized(challenge)
+                }
+                throw MCPClientError.http(http.statusCode)
             }
-            throw MCPClientError.http(http.statusCode)
         }
 
         task = Task { [weak self] in
@@ -76,7 +84,7 @@ public actor MCPSSETransport: MCPTransport {
             do {
                 return try await group.next()!
             } catch {
-                fail(error)
+                await self.fail(error)
                 throw error
             }
         }
@@ -88,12 +96,24 @@ public actor MCPSSETransport: MCPTransport {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
         headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
-        let (_, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
-            if http.statusCode == 401 {
-                throw MCPClientError.unauthorized(http.value(forHTTPHeaderField: "WWW-Authenticate"))
+        await log(.outbound, "POST \(endpoint.absoluteString)\n\(headerText(headers))")
+        if let text = String(data: body, encoding: .utf8) {
+            await log(.outbound, text)
+        }
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            await log(.inbound, "HTTP \(http.statusCode)\n\(headerText(http.allHeaderFields))")
+            if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
+                await log(.inbound, text)
             }
-            throw MCPClientError.http(http.statusCode)
+            if !(200 ..< 300).contains(http.statusCode) {
+                let challenge = http.value(forHTTPHeaderField: "WWW-Authenticate")
+                await log(.error, "HTTP \(http.statusCode)" + (challenge.map { " · \($0)" } ?? ""))
+                if http.statusCode == 401 {
+                    throw MCPClientError.unauthorized(challenge)
+                }
+                throw MCPClientError.http(http.statusCode)
+            }
         }
     }
 
@@ -101,13 +121,17 @@ public actor MCPSSETransport: MCPTransport {
         guard !closed else { return }
         closed = true
         task?.cancel()
-        fail(MCPClientError.transport(String(localized: "Disconnected.")))
+        await fail(MCPClientError.transport(String(localized: "Disconnected.")))
     }
 
-    private func receive(_ event: MCPSSEEvent, base: URL) {
+    private func receive(_ event: MCPSSEEvent, base: URL) async {
+        if let name = event.event, name != "message" {
+            await log(.info, "SSE event: \(name)")
+        }
         if event.event == "endpoint" {
             let value = event.data.trimmingCharacters(in: .whitespacesAndNewlines)
             if let url = URL(string: value, relativeTo: base)?.absoluteURL {
+                await log(.info, "endpoint \(url.absoluteString)")
                 endpointWaiters.forEach { $0.resume(returning: url) }
                 endpointWaiters.removeAll()
             }
@@ -115,7 +139,11 @@ public actor MCPSSETransport: MCPTransport {
         }
         guard let data = event.data.data(using: .utf8),
               let message = try? JSONDecoder().decode(JSONValue.self, from: data)
-        else { return }
+        else {
+            await log(.inbound, event.data)
+            return
+        }
+        await log(.inbound, event.data)
         continuation.yield(message)
     }
 
@@ -123,11 +151,24 @@ public actor MCPSSETransport: MCPTransport {
         try await withCheckedThrowingContinuation { endpointWaiters.append($0) }
     }
 
-    private func fail(_ error: Error) {
+    private func fail(_ error: Error) async {
         guard !finished else { return }
         finished = true
+        await log(.error, error.localizedDescription)
         endpointWaiters.forEach { $0.resume(throwing: error) }
         endpointWaiters.removeAll()
         continuation.finish(throwing: error)
+    }
+
+    private func headerText(_ headers: [String: String]) -> String {
+        headers.map { "\($0.key): \($0.value)" }.sorted().joined(separator: "\n")
+    }
+
+    private func headerText(_ fields: [AnyHashable: Any]) -> String {
+        fields.map { "\($0.key): \($0.value)" }.sorted().joined(separator: "\n")
+    }
+
+    private func log(_ direction: MCPDebugLog.Direction, _ text: String) async {
+        await MCPDebugLog.shared.record(server: label, direction: direction, text: text)
     }
 }

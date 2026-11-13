@@ -9,6 +9,7 @@ enum MCPOAuthCoordinator {
         guard URL(string: endpoint) != nil else {
             throw MCPClientError.invalidEndpoint(endpoint)
         }
+        log("Sign in · \(endpoint)")
         var oauth = oauth
         let metadata = try await discover(endpoint: endpoint, oauth: &oauth, challenge: challenge)
         if oauth.authorizationEndpoint.isEmpty { oauth.authorizationEndpoint = metadata.authorizationEndpoint }
@@ -34,7 +35,9 @@ enum MCPOAuthCoordinator {
             pkce: pkce,
             state: state
         )
+        log("Open \(url.absoluteString)")
         let callback = try await MCPOAuthPresenter.shared.authorize(url, callbackScheme: MCPOAuth.callbackScheme)
+        log("Callback \(callback.absoluteString)")
         let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? []
         guard items.first(where: { $0.name == "state" })?.value == state,
               let code = items.first(where: { $0.name == "code" })?.value
@@ -46,6 +49,7 @@ enum MCPOAuthCoordinator {
             tokenEndpoint: oauth.tokenEndpoint
         )
         apply(tokens: tokens, to: &oauth)
+        log("Signed in · expires \(oauth.expiresAt?.description ?? "never")")
         return oauth
     }
 
@@ -54,6 +58,7 @@ enum MCPOAuthCoordinator {
             throw MCPClientError.transport(String(localized: "Sign in again."))
         }
         var oauth = oauth
+        log("Refresh token · \(oauth.tokenEndpoint)")
         let tokens = try await exchange(body: MCPOAuth.refreshBody(oauth: oauth), tokenEndpoint: oauth.tokenEndpoint)
         apply(tokens: tokens, to: &oauth)
         return oauth
@@ -84,7 +89,9 @@ enum MCPOAuthCoordinator {
         guard let resourceURL = MCPOAuthChallenge.resourceMetadataURL(from: challenge, base: base) else {
             throw MCPClientError.invalidEndpoint(endpoint)
         }
+        log("GET \(resourceURL.absoluteString)")
         let resource = try await get(resourceURL, as: MCPProtectedResourceMetadata.self)
+        log("Resource metadata \(jsonString(resource))")
         guard let issuer = resource.authorizationServers.first.flatMap(URL.init(string:)) else {
             throw MCPClientError.transport(String(localized: "The server did not name an authorization server."))
         }
@@ -99,7 +106,10 @@ enum MCPOAuthCoordinator {
         guard let metadataURL = components.url else {
             throw MCPClientError.transport(String(localized: "The authorization server's address is not valid."))
         }
-        return try await get(metadataURL, as: MCPAuthorizationServerMetadata.self)
+        log("GET \(metadataURL.absoluteString)")
+        let metadata = try await get(metadataURL, as: MCPAuthorizationServerMetadata.self)
+        log("Authorization metadata \(jsonString(metadata))")
+        return metadata
     }
 
     private static func registerClient(oauth: MCPServerOAuth) async throws -> (clientID: String, clientSecret: String) {
@@ -110,7 +120,14 @@ enum MCPOAuthCoordinator {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try MCPOAuth.registrationBody(redirectURI: MCPOAuth.redirectURI)
+        log("POST \(url.absoluteString)")
+        if let body = request.httpBody, let text = String(data: body, encoding: .utf8) {
+            log(text)
+        }
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+            log("Response \(text)")
+        }
         try check(response)
         let json = try JSONDecoder().decode(JSONValue.self, from: data)
         guard let clientID = json["client_id"]?.string, !clientID.isEmpty else {
@@ -130,7 +147,14 @@ enum MCPOAuthCoordinator {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
+        log("POST \(url.absoluteString)")
+        if let text = String(data: body, encoding: .utf8) {
+            log(text)
+        }
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+            log("Response \(text)")
+        }
         try check(response)
         let json = try JSONDecoder().decode(JSONValue.self, from: data)
         return MCPOAuth.tokens(from: json)
@@ -147,5 +171,18 @@ enum MCPOAuthCoordinator {
         guard (200 ..< 300).contains(http.statusCode) else {
             throw MCPClientError.http(http.statusCode)
         }
+    }
+
+    private static func log(_ text: String) {
+        MCPDebugLog.shared.record(server: "OAuth", direction: .info, text: text)
+    }
+
+    private static func jsonString<T: Encodable>(_ value: T) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(value),
+              let text = String(data: data, encoding: .utf8)
+        else { return "" }
+        return text
     }
 }

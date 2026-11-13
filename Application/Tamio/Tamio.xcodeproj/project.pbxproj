@@ -18,6 +18,7 @@
 		1712F0346228EAD47B28C9F8 /* Mac.swift in Sources */ = {isa = PBXBuildFile; fileRef = 864CDE934ED78C564FA994CA /* Mac.swift */; };
 		1D739D0FC4F886FBF900BB47 /* Bench.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D6160F6465AF5B5EFF497B1 /* Bench.swift */; };
 		24E5740380D9EAC687D3FC9E /* BatchRunSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0139DAD3C6106A836B899900 /* BatchRunSheet.swift */; };
+		25B1E6B7F1C39F2D2150F6DD /* MCPDebugLogSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39FABEEE7620B3CF131C1EB0 /* MCPDebugLogSheet.swift */; };
 		2B6242749F6B87A0ECB35D0B /* MacStatusItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FECAE3A90867AFF08FC69C1 /* MacStatusItem.swift */; };
 		2CF9355F185C210EA397816B /* SSHAgentKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48D5E8A396EAF04D64CDAFCD /* SSHAgentKeys.swift */; };
 		2E4369F69EA9DF974DF27F6A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5BF8E05669BAD48CA9ADC146 /* Assets.xcassets */; };
@@ -105,6 +106,7 @@
 		2FB6F8223DEF8EF4B924113F /* Tamio.icon */ = {isa = PBXFileReference; path = Tamio.icon; sourceTree = "<group>"; };
 		2FECAE3A90867AFF08FC69C1 /* MacStatusItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacStatusItem.swift; sourceTree = "<group>"; };
 		32A5AE4D123AE8FDC9311DE9 /* MCPServersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServersView.swift; sourceTree = "<group>"; };
+		39FABEEE7620B3CF131C1EB0 /* MCPDebugLogSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPDebugLogSheet.swift; sourceTree = "<group>"; };
 		3D77332CA29BD257A4BA5AD0 /* AgentSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSettings.swift; sourceTree = "<group>"; };
 		42B043231E7AF65887A269C2 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		4556288987001E1EA703A8E5 /* TerminalSnippetPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSnippetPanel.swift; sourceTree = "<group>"; };
@@ -318,6 +320,7 @@
 			isa = PBXGroup;
 			children = (
 				68FF23626BB42744DB4DE46D /* MCPClientCenter.swift */,
+				39FABEEE7620B3CF131C1EB0 /* MCPDebugLogSheet.swift */,
 				C39D856FA7CEA8DD4E0ED4E0 /* MCPOAuthCoordinator.swift */,
 				171B54A7339564EAC0918868 /* MCPOAuthPresenter.swift */,
 				4BF628314892CDF03021D1E5 /* MCPServerEditorSheet.swift */,
@@ -586,6 +589,7 @@
 				8A07521B9F79187B9B9B0F83 /* IdentitiesView.swift in Sources */,
 				8ADBE046B251136675E4183B /* LocalTerminalTabBar.swift in Sources */,
 				0D6D816173DD7527B4E097BE /* MCPClientCenter.swift in Sources */,
+				25B1E6B7F1C39F2D2150F6DD /* MCPDebugLogSheet.swift in Sources */,
 				E7D0CB13F4FCC36808BABDED /* MCPOAuthCoordinator.swift in Sources */,
 				10ABEF38C96206C857538E0F /* MCPOAuthPresenter.swift in Sources */,
 				BB0051E193ADD9741073364B /* MCPServerEditorSheet.swift in Sources */,

@@ -17,6 +17,7 @@ struct MCPServersView: View {
     @State private var selection: RDMCPServer.ID?
     @State private var creating = false
     @State private var editing: EditorTarget?
+    @State private var debugLogShown = false
 
     struct EditorTarget: Identifiable {
         let id = UUID()
@@ -43,6 +44,12 @@ struct MCPServersView: View {
             }
         ) {
         } trailing: {
+            Button {
+                debugLogShown = true
+            } label: {
+                Label("Debug Log", rx: "doc.text")
+            }
+            .help(String(localized: "Show MCP requests and responses"))
         } header: {
             PageTitle("MCP Servers")
         } content: {
@@ -82,6 +89,9 @@ struct MCPServersView: View {
         .sheet(item: $editing) { target in
             MCPServerEditorSheet(server: target.server) { _ in editing = nil }
                 .environmentObject(TamioStore.shared)
+        }
+        .sheet(isPresented: $debugLogShown) {
+            MCPDebugLogSheet()
         }
         .onAppear {
             if selection == nil { selection = store.mcpServerGroup.servers.first?.id }
