@@ -13,6 +13,18 @@ the user. To release, rename that heading to the version and date
 
 ## [Unreleased]
 
+### Added
+- **This Mac is in the sidebar.** A row under Home opens a shell on this
+  Mac — the one already open, or a new one — instead of going through the
+  File menu.
+
+### Fixed
+- **The app no longer crashes when a page with a toolbar menu opens.** Going
+  from Home to Servers (or any page whose toolbar carries a menu such as
+  Privacy) could abort Tamio: AppKit asked the Lucide icon it draws there for
+  a symbol scale the icon set does not have, and its symbol provider fails an
+  assertion. Toolbar and menu icons now keep the one scale they carry.
+
 ## [0.2.21] - 2026-11-07
 
 ### Added

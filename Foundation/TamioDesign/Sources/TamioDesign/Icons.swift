@@ -157,7 +157,14 @@ public extension Image {
         @MainActor static func appKitImage(_ systemName: String) -> NSImage? {
             guard let name = lucide[systemName], inMainBundle else { return nil }
             if let image = images[name] { return image }
-            let image = NSImage(symbolName: "lucide.\(name)", bundle: .main, variableValue: 1)
+            guard let symbol = NSImage(symbolName: "lucide.\(name)", bundle: .main, variableValue: 1) else { return nil }
+            // A popup button (a toolbar Menu) works out a symbol configuration
+            // for the control it is drawn in and asks the image for that
+            // variant. Tamio's symbols carry one drawing, at the default
+            // scale; asked for a small or a large one, AppKit's symbol
+            // provider fails an assertion and the app crashes. Pinning the
+            // scale keeps it from being asked.
+            let image = symbol.withSymbolConfiguration(NSImage.SymbolConfiguration(scale: .medium)) ?? symbol
             images[name] = image
             return image
         }

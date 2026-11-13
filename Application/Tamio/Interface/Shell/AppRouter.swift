@@ -148,6 +148,21 @@ final class AppRouter: ObservableObject {
         route = .terminal(context.id)
     }
 
+    /// The shell on this Mac, for the sidebar's This Mac row: the one already
+    /// open, a closed one started again in its place, or a new one. Another
+    /// shell is opened from the File menu, not by clicking the row again.
+    func showLocalTerminal() {
+        let manager = TerminalManager.shared
+        if let open = manager.sessionContexts.last(where: { $0.remoteType == .local && !$0.closed }) {
+            route = .terminal(open.id)
+        } else if let closed = manager.sessionContexts.last(where: { $0.remoteType == .local }) {
+            let fresh = manager.restartLocalSession(closed)
+            route = .terminal(fresh.id)
+        } else {
+            openLocalTerminal()
+        }
+    }
+
     func openTerminal(command: SSHCommandReader) {
         let context = TerminalManager.shared.createSession(withCommand: command)
         if opensAutomatically { route = .terminal(context.id) }

@@ -214,7 +214,10 @@ extension TerminalManager.Context {
     /// row's tooltip.
     @MainActor
     var sidebarTitle: String {
-        let siblings = TerminalManager.shared.sessionContexts.filter { $0.remoteType == .machine && $0.machine.id == machine.id }
+        let siblings = TerminalManager.shared.sessionContexts.filter { other in
+            if remoteType == .local { return other.remoteType == .local }
+            return other.remoteType == .machine && other.machine.id == machine.id
+        }
         if let index = siblings.firstIndex(where: { $0.id == id }), siblings.count > 1 { return String(localized: "Terminal \(index + 1)") }
         return String(localized: "Terminal")
     }

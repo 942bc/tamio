@@ -32,6 +32,13 @@ struct SidebarView: View {
 
     var selection: Binding<Item?> {
         Binding(get: {
+            // A shell on this Mac belongs to the This Mac row, not to a
+            // Sessions row of its own.
+            if case let .terminal(id) = router.route,
+               terminals.sessionContexts.first(where: { $0.id == id })?.remoteType == .local
+            {
+                return .terminal(id)
+            }
             if case let .terminal(id) = router.route, let owner = router.owner(of: router.route),
                router.terminals(of: owner).count > 1
             {
@@ -61,6 +68,7 @@ struct SidebarView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 place(.home, "Home", icon: .home)
+                localPlace
 
                 SidebarHeader("Manage")
                 place(.servers, "Servers", icon: .servers, badge: store.machineGroup.count)
@@ -68,9 +76,10 @@ struct SidebarView: View {
                 place(.snippets, "Snippets", icon: .snippets, badge: store.snippetGroup.count)
                 place(.portForward, "Port Forward", icon: .portForward, badge: store.portForwardGroup.count)
 
-                if !sessionIDs.isEmpty {
+                let sessionOwners = router.openOwners.filter { !isLocalTerminalOwner($0) }
+                if !sessionOwners.isEmpty {
                     SidebarHeader("Sessions")
-                    ForEach(router.openOwners, id: \.self) { owner in
+                    ForEach(sessionOwners, id: \.self) { owner in
                         SidebarRow(isSelected: selection.wrappedValue == .owner(owner)) {
                             selection.wrappedValue = .owner(owner)
                         } label: {
@@ -111,6 +120,40 @@ struct SidebarView: View {
         }
         .environment(\.sidebarMetrics, metrics)
         .pausesHitTestingWhileSidebarSlides()
+    }
+
+    /// The shell on this Mac, always here: it shows the one already open
+    /// rather than opening another at every click.
+    @ViewBuilder
+    private var localPlace: some View {
+        let locals = localTerminals
+        SidebarRow(isSelected: locals.contains { router.route == .terminal($0.id) }) {
+            router.showLocalTerminal()
+        } label: {
+            SidebarLabel("This Mac", icon: .local)
+        }
+        .accessibilityLabel(Text("This Mac"))
+        // Several shells on this Mac: one row each, as a server's terminals
+        // are listed under it.
+        if locals.count > 1 {
+            ForEach(locals) { context in
+                SidebarRow(isSelected: router.route == .terminal(context.id)) {
+                    router.route = .terminal(context.id)
+                } label: {
+                    TerminalSidebarRow(context: context)
+                }
+                .accessibilityLabel(context.sidebarTitle)
+            }
+        }
+    }
+
+    private var localTerminals: [TerminalManager.Context] {
+        terminals.sessionContexts.filter { $0.remoteType == .local }
+    }
+
+    private func isLocalTerminalOwner(_ owner: SessionOwner) -> Bool {
+        guard case let .command(id) = owner else { return false }
+        return terminals.sessionContexts.first { $0.id == id }?.remoteType == .local
     }
 
     /// A session row's name: the server's, or the Quick Connect command's.
@@ -227,6 +270,7 @@ extension View {
 /// icons (Lucide's, in TamioDesign), like every other icon in the app.
 enum SidebarIcon: String {
     case home = "house"
+    case local = "laptopcomputer"
     case servers = "server.rack"
     case identities = "key"
     case snippets = "chevron.left.forwardslash.chevron.right"
