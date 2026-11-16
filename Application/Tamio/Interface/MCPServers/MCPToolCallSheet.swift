@@ -55,9 +55,23 @@ struct MCPToolCallSheet: View {
 
     private var complexSchema: Bool { fields.count != propertyCount }
 
+    private var missingRequired: [String] {
+        fields.filter(\.required).compactMap { field in
+            switch field.type {
+            case "boolean":
+                return nil
+            default:
+                if !field.enumValues.isEmpty { return nil }
+                let value = values[field.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return value.isEmpty ? field.id : nil
+            }
+        }
+    }
+
     var body: some View {
         SheetScaffold(tool.title ?? tool.name, lead: tool.description.map { LocalizedStringKey($0) }) {
-            VStack(alignment: .leading, spacing: RX.Space.s4) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: RX.Space.s4) {
                 Picker("", selection: $mode) {
                     ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
@@ -82,18 +96,34 @@ struct MCPToolCallSheet: View {
                 if let error {
                     HelpText(error, isError: true)
                 }
+                if mode == .form, !complexSchema, !missingRequired.isEmpty {
+                    HelpText(
+                        String(localized: "Fill the required fields: \(missingRequired.joined(separator: ", "))"),
+                        isError: true
+                    )
+                }
                 if let result {
                     resultView(result)
                 }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxHeight: 520)
         } footer: {
             Spacer()
             Button("Close") { dismiss() }
                 .buttonStyle(.rx)
                 .keyboardShortcut(.cancelAction)
-            Button("Call", action: performCall)
-                .buttonStyle(.rxPrimary)
-                .disabled(isCalling)
+            Button(action: performCall) {
+                HStack(spacing: 4) {
+                    if isCalling {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(LocalizedStringKey(isCalling ? "Calling…" : "Call"))
+                }
+            }
+            .buttonStyle(.rxPrimary)
+            .disabled(isCalling || (mode == .form && !complexSchema && !missingRequired.isEmpty))
         }
         .frame(width: 620)
         .onAppear(perform: prepare)
@@ -195,9 +225,14 @@ struct MCPToolCallSheet: View {
     @ViewBuilder
     private func resultView(_ result: MCPCallResult) -> some View {
         VStack(alignment: .leading, spacing: RX.Space.s2) {
-            Text("Result")
-                .font(.rxSectionTitle)
-                .foregroundStyle(.rxInk)
+            HStack {
+                Text("Result")
+                    .font(.rxSectionTitle)
+                    .foregroundStyle(.rxInk)
+                Spacer()
+                Button("Copy") { copyResult(result) }
+                    .buttonStyle(.rx(size: .small))
+            }
             ForEach(Array(result.contents.enumerated()), id: \.offset) { _, content in
                 switch content {
                 case let .text(text):
@@ -227,8 +262,19 @@ struct MCPToolCallSheet: View {
         )
     }
 
-    private func prettyJSON(_ value: JSONValue) -> String {
-        let encoder = JSONEncoder()
+    private func copyResult(_ result: MCPCallResult) {
+        let text = result.contents.compactMap { content -> String? in
+            switch content {
+            case let .text(text): return text
+            case .image: return nil
+            case let .other(json): return prettyJSON(json)
+            }
+        }.joined(separator: "\n\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text.isEmpty ? prettyJSON(result.raw) : text, forType: .string)
+    }
+
+    private func prettyJSON(_ value: JSONValue) -> String {        let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(value), let text = String(data: data, encoding: .utf8) else {
             return "{}"

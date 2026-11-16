@@ -33,6 +33,17 @@ the user. To release, rename that heading to the version and date
 - **MCP traffic can be watched.** A console pinned to the bottom of MCP
   Servers shows each request, response, SSE event and OAuth step, with
   headers and bodies, in memory only.
+- **MCP servers are quicker to work with.** Search and refresh the tool
+  list, double-click a server to connect or a tool to call, press Return
+  to connect, right-click a server for connect, disconnect and refresh,
+  and see when it was last connected.
+- **The MCP console can be filtered and copied.** Filter by channel (HTTP,
+  SSE, OAuth, APP) and direction (SEND, RECV, INFO, ERROR), copy one entry,
+  and drag its top edge to resize it.
+- **Local tabs can be renamed.** Double-click a tab or use Rename Tab…;
+  Enter saves the name, Esc leaves it as it was.
+- **The app icon is part of the source.** `Resources/AppIcon.icns` is used
+  by builds whose SDK cannot compile Icon Composer's `.icon`.
 
 ### Fixed
 - **MCP servers using Streamable HTTP connect.** The client only spoke the

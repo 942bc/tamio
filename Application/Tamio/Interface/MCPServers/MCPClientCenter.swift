@@ -74,6 +74,28 @@ final class MCPClientCenter: ObservableObject {
         return try await client.callTool(name: name, arguments: arguments)
     }
 
+    /// Fetches the tool list again without dropping the connection.
+    func refreshTools(_ server: RDMCPServer) async {
+        guard let client = clients[server.id] else { return }
+        do {
+            let list = try await client.listTools()
+            toolLists[server.id] = list
+            MCPDebugLog.shared.record(
+                server: server.displayName,
+                direction: .info,
+                text: "Tools refreshed · \(list.count)",
+                channel: .app
+            )
+        } catch {
+            MCPDebugLog.shared.record(
+                server: server.displayName,
+                direction: .error,
+                text: error.localizedDescription,
+                channel: .app
+            )
+        }
+    }
+
     private func connectOnce(_ server: RDMCPServer) async throws {
         await disconnect(server.id)
         states[server.id] = .connecting

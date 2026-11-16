@@ -10,29 +10,95 @@ struct MCPDebugConsole: View {
     @ObservedObject private var log = MCPDebugLog.shared
 
     @State private var filter = ""
+    @State private var channelFilter: MCPDebugLog.Channel?
+    @State private var directionFilter: MCPDebugLog.Direction?
     @State private var follow = true
     @State private var expanded = true
+    @AppStorage("sb.moe.tamio.mcpConsoleHeight") private var consoleHeight: Double = 170
+    @State private var dragStart: CGFloat?
+    @State private var handleHovered = false
+    @State private var cursorPushed = false
 
     private var filtered: [MCPDebugLog.Entry] {
-        guard !filter.isEmpty else { return log.entries }
+        var result = log.entries
+        if let channelFilter {
+            result = result.filter { $0.channel == channelFilter }
+        }
+        if let directionFilter {
+            result = result.filter { $0.direction == directionFilter }
+        }
+        guard !filter.isEmpty else { return result }
         let key = filter.lowercased()
-        return log.entries.filter {
+        return result.filter {
             $0.server.lowercased().contains(key) || $0.text.lowercased().contains(key)
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            Rectangle()
-                .fill(Color.rxHairline)
-                .frame(height: 1)
+            dragHandle
             header
             if expanded {
                 list
-                    .frame(height: 170)
+                    .frame(height: CGFloat(consoleHeight))
             }
         }
         .background(Color.rxSurface)
+    }
+
+    /// The top edge: drag it up or down to give the log more or less room.
+    private var dragHandle: some View {
+        ZStack {
+            Rectangle()
+                .fill(Color.rxHairline)
+                .frame(height: 1)
+            Capsule()
+                .fill(Color.rxInkSecondary.opacity(handleHovered ? 0.6 : 0.35))
+                .frame(width: 36, height: 4)
+                .animation(.rxQuick, value: handleHovered)
+        }
+        .frame(height: 9)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            handleHovered = inside
+            if inside, !cursorPushed {
+                NSCursor.resizeUpDown.push()
+                cursorPushed = true
+            } else if !inside, cursorPushed, dragStart == nil {
+                NSCursor.pop()
+                cursorPushed = false
+            }
+        }
+        .onDisappear {
+            if cursorPushed {
+                NSCursor.pop()
+                cursorPushed = false
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if dragStart == nil {
+                        dragStart = CGFloat(consoleHeight)
+                        if !cursorPushed {
+                            NSCursor.resizeUpDown.push()
+                            cursorPushed = true
+                        }
+                    }
+                    let start = dragStart ?? CGFloat(consoleHeight)
+                    consoleHeight = Double(min(max(start - value.translation.height, 100), 620))
+                }
+                .onEnded { _ in
+                    dragStart = nil
+                    if !handleHovered, cursorPushed {
+                        NSCursor.pop()
+                        cursorPushed = false
+                    }
+                }
+        )
+        .help(Text("Drag to resize the console"))
+        .accessibilityLabel(Text("Resize Console"))
     }
 
     private var header: some View {
@@ -43,9 +109,29 @@ struct MCPDebugConsole: View {
             Text("\(log.entries.count)")
                 .font(.rxAxis)
                 .foregroundStyle(.rxInkSecondary)
+            Picker("", selection: $channelFilter) {
+                Text("All").tag(MCPDebugLog.Channel?.none)
+                ForEach(MCPDebugLog.Channel.allCases, id: \.self) { channel in
+                    Text(channel.rawValue).tag(Optional(channel))
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(width: 82)
+            .help(Text("Filter by channel"))
+            Picker("", selection: $directionFilter) {
+                Text("All").tag(MCPDebugLog.Direction?.none)
+                ForEach(MCPDebugLog.Direction.allCases, id: \.self) { direction in
+                    Text(direction.label).tag(Optional(direction))
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(width: 92)
+            .help(Text("Filter by direction"))
             TextField("Filter", text: $filter)
                 .textFieldStyle(.rx)
-                .frame(maxWidth: 240)
+                .frame(maxWidth: 180)
             Toggle("Follow", isOn: $follow)
                 .toggleStyle(.checkbox)
                 .font(.rxHelp)
@@ -85,6 +171,9 @@ struct MCPDebugConsole: View {
                         ForEach(filtered) { entry in
                             entryView(entry)
                                 .id(entry.id)
+                                .contextMenu {
+                                    Button("Copy Entry") { copy(entry) }
+                                }
                         }
                     }
                 }
@@ -101,7 +190,7 @@ struct MCPDebugConsole: View {
     private func entryView(_ entry: MCPDebugLog.Entry) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: RX.Space.s2) {
-                Text(entry.date, format: .dateTime.hour().minute().second())
+                Text(entry.date, format: .dateTime.month(.twoDigits).day(.twoDigits).hour().minute().second())
                     .font(.rxAxis)
                     .foregroundStyle(.rxInkTertiary)
                 Text("\(entry.direction.rawValue) \(entry.direction.label)")
@@ -148,11 +237,18 @@ struct MCPDebugConsole: View {
     }
 
     private func copyAll() {
-        let text = log.entries.map { entry in
-            "\(entry.date.formatted(.dateTime.hour().minute().second())) [\(entry.channel.rawValue)] \(entry.direction.rawValue) \(entry.direction.label) \(entry.server)\n\(entry.text)"
-        }
-        .joined(separator: "\n\n")
+        let text = log.entries.map(line).joined(separator: "\n\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func copy(_ entry: MCPDebugLog.Entry) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(line(entry), forType: .string)
+    }
+
+    private func line(_ entry: MCPDebugLog.Entry) -> String {
+        let time = entry.date.formatted(.dateTime.month(.twoDigits).day(.twoDigits).hour().minute().second())
+        return "\(time) [\(entry.channel.rawValue)] \(entry.direction.rawValue) \(entry.direction.label) \(entry.server)\n\(entry.text)"
     }
 }

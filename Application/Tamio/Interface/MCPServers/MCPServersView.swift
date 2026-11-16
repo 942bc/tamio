@@ -12,6 +12,7 @@ import TamioModule
 
 struct MCPServersView: View {
     @EnvironmentObject var store: TamioStore
+    @ObservedObject private var center = MCPClientCenter.shared
 
     @State private var searchText = ""
     @State private var selection: RDMCPServer.ID?
@@ -91,12 +92,44 @@ struct MCPServersView: View {
         }
     }
 
+    /// Double-clicking a server row connects it, the way a list of hosts is
+    /// expected to behave. A server already connecting or connected only
+    /// gets selected.
+    @MainActor
+    private func connect(_ server: RDMCPServer) {
+        selection = server.id
+        let center = MCPClientCenter.shared
+        switch center.state(server.id) {
+        case .idle, .failed:
+            Task { await center.connect(server) }
+        case .connecting, .ready:
+            break
+        }
+    }
+
     var list: some View {
         VStack(spacing: 2) {
             ForEach(filtered) { server in
                 MCPServerRow(server: server, selected: selection == server.id)
+                    .highPriorityGesture(
+                        TapGesture(count: 2).onEnded { connect(server) }
+                    )
                     .onTapGesture { selection = server.id }
                     .contextMenu {
+                        switch center.state(server.id) {
+                        case .idle, .failed:
+                            Button("Connect") { connect(server) }
+                        case .connecting:
+                            EmptyView()
+                        case .ready:
+                            Button("Disconnect") {
+                                Task { await center.disconnect(server.id) }
+                            }
+                            Button("Refresh Tools") {
+                                Task { await center.refreshTools(server) }
+                            }
+                        }
+                        Divider()
                         Button("Edit…") { editing = EditorTarget(server: server.id) }
                         Divider()
                         Button("Delete…", role: .destructive) { MCPServerActions.delete(server.id) }
@@ -143,7 +176,11 @@ private struct MCPServerRow: View {
         )
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
-        .help(server.endpoint)
+        .help(
+            center.isConnected(server.id)
+                ? server.endpoint
+                : "\(server.endpoint)\n" + String(localized: "Double-click to connect")
+        )
     }
 
     private var statusColor: Color {
@@ -163,8 +200,26 @@ private struct MCPServerDetail: View {
     @EnvironmentObject var store: TamioStore
     @ObservedObject private var center = MCPClientCenter.shared
     @State private var calling: MCPTool?
+    @State private var toolSearch = ""
+    @State private var refreshing = false
 
     var value: RDMCPServer { store.mcpServerGroup[server] }
+
+    private var allTools: [MCPTool] {
+        center.toolList(server).sorted {
+            $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+
+    private var visibleTools: [MCPTool] {
+        guard !toolSearch.isEmpty else { return allTools }
+        let key = toolSearch.lowercased()
+        return allTools.filter {
+            $0.name.lowercased().contains(key)
+                || ($0.title ?? "").lowercased().contains(key)
+                || ($0.description ?? "").lowercased().contains(key)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: RX.Space.s4) {
@@ -205,6 +260,11 @@ private struct MCPServerDetail: View {
                 Spacer(minLength: 0)
                 connectionControl
             }
+            Text(value.lastConnected.map {
+                String(localized: "Last connected \($0.formatted(date: .abbreviated, time: .shortened))")
+            } ?? String(localized: "Never connected"))
+                .font(.rxHelp)
+                .foregroundStyle(.rxInkSecondary)
             if case let .failed(message) = center.state(server) {
                 HelpText(message, isError: true)
             }
@@ -215,15 +275,48 @@ private struct MCPServerDetail: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Text("Tools")
-                .font(.rxSectionTitle)
-                .foregroundStyle(.rxInk)
-            if center.toolList(server).isEmpty {
-                EmptyStateView("Connect to load tools", systemImage: "wrench.and.screwdriver")
+            HStack(alignment: .center, spacing: RX.Space.s2) {
+                Text("Tools")
+                    .font(.rxSectionTitle)
+                    .foregroundStyle(.rxInk)
+                Text("\(allTools.count)")
+                    .font(.rxAxis)
+                    .foregroundStyle(.rxInkSecondary)
+                Spacer(minLength: 0)
+                Button {
+                    Task {
+                        refreshing = true
+                        await center.refreshTools(value)
+                        refreshing = false
+                    }
+                } label: {
+                    if refreshing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Refresh Tools", rx: "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(.rx(size: .small))
+                .disabled(!center.isConnected(server) || refreshing)
+                .help(Text("Refresh Tools"))
+            }
+            if !allTools.isEmpty {
+                RXSearchField("Filter tools", text: $toolSearch, width: 220)
+            }
+            if allTools.isEmpty {
+                if center.isConnected(server) {
+                    EmptyStateView("This server has no tools", systemImage: "wrench.and.screwdriver")
+                        .rxCard()
+                } else {
+                    EmptyStateView("Connect to load tools", systemImage: "wrench.and.screwdriver")
+                        .rxCard()
+                }
+            } else if visibleTools.isEmpty {
+                EmptyStateView("No matches", systemImage: "magnifyingglass")
                     .rxCard()
             } else {
                 VStack(alignment: .leading, spacing: RX.Space.s2) {
-                    ForEach(center.toolList(server)) { tool in
+                    ForEach(visibleTools) { tool in
                         HStack(alignment: .top, spacing: RX.Space.s3) {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(tool.name)
@@ -246,6 +339,10 @@ private struct MCPServerDetail: View {
                             RoundedRectangle(cornerRadius: RX.Radius.md, style: .continuous)
                                 .fill(Color.rxPill)
                         )
+                        .highPriorityGesture(
+                            TapGesture(count: 2).onEnded { calling = tool }
+                        )
+                        .help(Text("Double-click to call"))
                     }
                 }
             }
@@ -260,14 +357,22 @@ private struct MCPServerDetail: View {
         }
     }
 
+    private var connectTitle: LocalizedStringKey {
+        if case let .oauth(oauth) = value.auth, !oauth.isSignedIn {
+            return "Sign In & Connect"
+        }
+        return "Connect"
+    }
+
     @ViewBuilder
     private var connectionControl: some View {
         switch center.state(server) {
         case .idle:
-            Button("Connect") {
+            Button(connectTitle) {
                 Task { await center.connect(value) }
             }
             .buttonStyle(.rx)
+            .keyboardShortcut(.return, modifiers: [])
         case .connecting:
             HStack(spacing: RX.Space.s2) {
                 ProgressView().controlSize(.small)
@@ -285,6 +390,7 @@ private struct MCPServerDetail: View {
                 Task { await center.connect(value) }
             }
             .buttonStyle(.rx)
+            .keyboardShortcut(.return, modifiers: [])
         }
     }
 }

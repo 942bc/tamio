@@ -236,7 +236,8 @@ struct MCPServerEditorSheet: View {
     }
 
     private func save() {
-        var value = server.map { store.mcpServerGroup[$0] } ?? RDMCPServer()
+        let previous = server.map { store.mcpServerGroup[$0] }
+        var value = previous ?? RDMCPServer()
         value.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         value.endpoint = trimmedEndpoint
         value.comment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -252,6 +253,17 @@ struct MCPServerEditorSheet: View {
             value.auth = .oauth(oauth)
         }
         store.mcpServerGroup.insert(value)
+        // A live connection was made with the old endpoint, transport or
+        // credentials; drop it so the next Connect uses what was saved.
+        if let previous,
+           previous.endpoint != value.endpoint
+               || previous.auth != value.auth
+               || previous.transportKind != value.transportKind
+        {
+            Task { @MainActor in
+                await MCPClientCenter.shared.disconnect(value.id)
+            }
+        }
         onClose(value.id)
     }
 }

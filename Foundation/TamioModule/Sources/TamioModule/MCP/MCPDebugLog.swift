@@ -13,7 +13,7 @@ import Foundation
 public final class MCPDebugLog: ObservableObject {
     public static let shared = MCPDebugLog()
 
-    public enum Direction: String, Sendable {
+    public enum Direction: String, CaseIterable, Sendable {
         case outbound = "→"
         case inbound = "←"
         case info = "·"
@@ -29,7 +29,7 @@ public final class MCPDebugLog: ObservableObject {
         }
     }
 
-    public enum Channel: String, Sendable {
+    public enum Channel: String, CaseIterable, Sendable {
         case http = "HTTP"
         case sse = "SSE"
         case oauth = "OAuth"

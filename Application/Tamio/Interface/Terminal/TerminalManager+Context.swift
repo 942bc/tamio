@@ -6,6 +6,7 @@
 //  the platform surface (TamioTerminalView) the core drives.
 //
 
+import Combine
 import Foundation
 import TamioModule
 import TamioTerminal
@@ -47,6 +48,9 @@ extension TerminalManager {
     final class Context: TamioModule.TerminalContext {
         private let surfaceBridge: TerminalSurfaceBridge
         var termInterface: TamioTerminalView { surfaceBridge.termInterface }
+        /// A name the user gave this local tab; nil keeps the default
+        /// “This Mac”/“This Mac 2” title.
+        @Published var customTitle: String? = nil
 
         init(machine: RDMachine) {
             surfaceBridge = TerminalSurfaceBridge()

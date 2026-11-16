@@ -51,6 +51,18 @@ xcodebuild \
 
 APP_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/Tamio.app"
 
+# The macOS 15 SDK cannot compile Icon Composer's .icon; local builds use a
+# pre-rendered icon when one is in the source. CI keeps compiling the .icon.
+LOCAL_ICON="${TAMIO_LOCAL_ICON:-$ROOT_DIR/Resources/AppIcon.icns}"
+XCODE_MAJOR="$(xcodebuild -version 2>/dev/null | head -1 | sed -n 's/^Xcode \([0-9][0-9]*\).*/\1/p')"
+if [[ "${XCODE_MAJOR:-0}" -lt 26 && -f "$LOCAL_ICON" ]]; then
+    cp "$LOCAL_ICON" "$APP_PATH/Contents/Resources/AppIcon.icns"
+    /usr/libexec/PlistBuddy -c 'Delete :CFBundleIconName' "$APP_PATH/Contents/Info.plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleIconFile AppIcon' "$APP_PATH/Contents/Info.plist" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$APP_PATH/Contents/Info.plist"
+    /usr/bin/codesign --force --deep --sign - "$APP_PATH"
+fi
+
 # The profile goes into the app, and what it grants into the signature: the
 # app asks its own signature whether it may sync.
 sign_for_icloud() {
