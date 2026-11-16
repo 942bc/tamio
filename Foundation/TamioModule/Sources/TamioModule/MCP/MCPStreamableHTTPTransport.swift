@@ -4,7 +4,9 @@
 //
 //  The current MCP transport: every JSON-RPC message is POSTed to one
 //  endpoint, and its answer comes back as JSON or as an SSE stream on the
-//  same response. The server may give a session id in Mcp-Session-Id.
+//  same response. The response is read through URLSessionDataDelegate, as
+//  some servers send their SSE stream with Transfer-Encoding: Identity,
+//  which URLSession's AsyncBytes buffers until the connection ends.
 //
 
 import Foundation
@@ -14,17 +16,15 @@ public actor MCPStreamableHTTPTransport: MCPTransport {
     private nonisolated let continuation: AsyncThrowingStream<JSONValue, Error>.Continuation
 
     private let label: String
-    private let session: URLSession
     private var sessionID: String?
     private var protocolVersion: String?
     private var closed = false
 
-    public init(label: String = "MCP", session: URLSession = .shared) {
+    public init(label: String = "MCP") {
         let (stream, continuation) = AsyncThrowingStream<JSONValue, Error>.makeStream()
         messages = stream
         self.continuation = continuation
         self.label = label
-        self.session = session
     }
 
     public func open(endpoint: URL, headers _: [String: String]) async throws -> URL {
@@ -41,6 +41,9 @@ public actor MCPStreamableHTTPTransport: MCPTransport {
         if let sessionID {
             request.setValue(sessionID, forHTTPHeaderField: "Mcp-Session-Id")
         }
+        // The header belongs on requests after initialize; the initialize
+        // request carries its version in the body. A server may call the
+        // pair a mismatch if the header is sent with initialize.
         if let protocolVersion {
             request.setValue(protocolVersion, forHTTPHeaderField: "MCP-Protocol-Version")
         }
@@ -52,8 +55,8 @@ public actor MCPStreamableHTTPTransport: MCPTransport {
             await log(.outbound, text)
         }
 
-        let (bytes, response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { return }
+        let responseStream = StreamableResponse()
+        let (http, chunks) = try await responseStream.start(request)
         await log(.inbound, "HTTP \(http.statusCode)\n\(headerText(http.allHeaderFields))")
         if let id = http.value(forHTTPHeaderField: "Mcp-Session-Id") {
             sessionID = id
@@ -63,7 +66,7 @@ public actor MCPStreamableHTTPTransport: MCPTransport {
         if !(200 ..< 300).contains(http.statusCode) {
             var data = Data()
             do {
-                for try await byte in bytes { data.append(byte) }
+                for try await chunk in chunks { data.append(chunk) }
             } catch {
                 await log(.error, error.localizedDescription)
             }
@@ -72,6 +75,7 @@ public actor MCPStreamableHTTPTransport: MCPTransport {
             }
             let challenge = http.value(forHTTPHeaderField: "WWW-Authenticate")
             await log(.error, "HTTP \(http.statusCode)" + (challenge.map { " · \($0)" } ?? ""))
+            responseStream.cancel()
             if http.statusCode == 401 {
                 throw MCPClientError.unauthorized(challenge)
             }
@@ -80,21 +84,30 @@ public actor MCPStreamableHTTPTransport: MCPTransport {
 
         if contentType.contains("text/event-stream") {
             var parser = MCPSSEParser()
-            for try await line in bytes.lines {
-                guard let event = parser.consume(line: line) else { continue }
-                guard let data = event.data.data(using: .utf8),
-                      let message = try? JSONDecoder().decode(JSONValue.self, from: data)
-                else {
+            var buffer = Data()
+            for try await chunk in chunks {
+                buffer.append(chunk)
+                while let newline = buffer.firstIndex(of: 0x0A) {
+                    let lineData = buffer[buffer.startIndex ..< newline]
+                    buffer.removeSubrange(buffer.startIndex ... newline)
+                    let line = String(decoding: lineData, as: UTF8.self)
+                    guard let event = parser.consume(line: line) else { continue }
+                    guard let data = event.data.data(using: .utf8),
+                          let message = try? JSONDecoder().decode(JSONValue.self, from: data)
+                    else {
+                        await log(.inbound, event.data, channel: .sse)
+                        continue
+                    }
                     await log(.inbound, event.data, channel: .sse)
-                    continue
+                    receiveProtocolVersion(from: message)
+                    continuation.yield(message)
                 }
-                await log(.inbound, event.data, channel: .sse)
-                receiveProtocolVersion(from: message)
-                continuation.yield(message)
             }
+            responseStream.cancel()
         } else {
             var data = Data()
-            for try await byte in bytes { data.append(byte) }
+            for try await chunk in chunks { data.append(chunk) }
+            responseStream.cancel()
             guard !data.isEmpty else { return }
             await log(.inbound, String(data: data, encoding: .utf8) ?? "")
             guard let message = try? JSONDecoder().decode(JSONValue.self, from: data) else { return }
@@ -138,5 +151,86 @@ public actor MCPStreamableHTTPTransport: MCPTransport {
             text: text,
             channel: channel
         )
+    }
+}
+
+/// One POST's response: headers as soon as they arrive, then each chunk.
+private final class StreamableResponse: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var responseContinuation: CheckedContinuation<(HTTPURLResponse, AsyncThrowingStream<Data, Error>), Error>?
+    private var session: URLSession?
+    private var task: URLSessionDataTask?
+    private let stream: AsyncThrowingStream<Data, Error>
+    private let continuation: AsyncThrowingStream<Data, Error>.Continuation
+
+    override init() {
+        let (stream, continuation) = AsyncThrowingStream<Data, Error>.makeStream()
+        self.stream = stream
+        self.continuation = continuation
+        super.init()
+    }
+
+    func start(_ request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, Error>) {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.lock()
+            responseContinuation = continuation
+            lock.unlock()
+
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.timeoutIntervalForRequest = 60
+            configuration.timeoutIntervalForResource = 300
+            let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+            self.session = session
+            let task = session.dataTask(with: request)
+            self.task = task
+            task.resume()
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        session?.invalidateAndCancel()
+        continuation.finish()
+    }
+
+    func urlSession(
+        _: URLSession,
+        dataTask _: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        guard let http = response as? HTTPURLResponse else {
+            completionHandler(.cancel)
+            finish(.failure(MCPClientError.transport(String(localized: "The server's answer was not HTTP."))))
+            return
+        }
+        completionHandler(.allow)
+        finish(.success((http, stream)))
+    }
+
+    func urlSession(_: URLSession, dataTask _: URLSessionDataTask, didReceive data: Data) {
+        continuation.yield(data)
+    }
+
+    func urlSession(_: URLSession, task _: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            continuation.finish(throwing: error)
+        } else {
+            continuation.finish()
+        }
+        session?.finishTasksAndInvalidate()
+    }
+
+    private func finish(_ result: Result<(HTTPURLResponse, AsyncThrowingStream<Data, Error>), Error>) {
+        lock.lock()
+        let continuation = responseContinuation
+        responseContinuation = nil
+        lock.unlock()
+        switch result {
+        case let .success(value):
+            continuation?.resume(returning: value)
+        case let .failure(error):
+            continuation?.resume(throwing: error)
+        }
     }
 }
