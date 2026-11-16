@@ -77,4 +77,41 @@ final class MCPOAuthTests: XCTestCase {
         XCTAssertEqual(tokens.refreshToken, "r")
         XCTAssertNotNil(tokens.expiresAt)
     }
+
+    func testRegistrationBodyCarriesScopeAndAuthMethod() throws {
+        let body = try MCPOAuth.registrationBody(
+            redirectURI: "sb.moe.tamio:/oauth/mcp",
+            scopes: ["read", "write"],
+            tokenAuthMethod: "client_secret_basic"
+        )
+        let json = try JSONDecoder().decode(JSONValue.self, from: body)
+        XCTAssertEqual(json["scope"]?.string, "read write")
+        XCTAssertEqual(json["token_endpoint_auth_method"]?.string, "client_secret_basic")
+    }
+
+    func testBasicTokenRequestUsesAuthorizationHeader() {
+        var oauth = MCPServerOAuth()
+        oauth.clientID = "client"
+        oauth.clientSecret = "secret"
+        oauth.refreshToken = "refresh"
+        oauth.tokenAuthMethod = "client_secret_basic"
+        let request = MCPOAuth.refreshRequest(oauth: oauth)
+        XCTAssertTrue(request.authorization?.hasPrefix("Basic ") == true)
+        let body = String(data: request.body, encoding: .utf8) ?? ""
+        XCTAssertFalse(body.contains("client_secret"))
+        XCTAssertTrue(body.contains("client_id=client"))
+    }
+
+    func testPostTokenRequestKeepsSecretInBody() {
+        var oauth = MCPServerOAuth()
+        oauth.clientID = "client"
+        oauth.clientSecret = "secret"
+        oauth.refreshToken = "refresh"
+        oauth.tokenAuthMethod = "client_secret_post"
+        let request = MCPOAuth.refreshRequest(oauth: oauth)
+        XCTAssertNil(request.authorization)
+        let body = String(data: request.body, encoding: .utf8) ?? ""
+        XCTAssertTrue(body.contains("client_secret=secret"))
+        XCTAssertTrue(body.contains("client_id=client"))
+    }
 }

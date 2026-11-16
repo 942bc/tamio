@@ -19,12 +19,21 @@ public actor MCPClient {
     private var nextID = 1
     private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
     private var reader: Task<Void, Never>?
-    private var protocolVersion = "2024-11-05"
+    private var protocolVersion: String
 
-    public init(server: RDMCPServer, transport: any MCPTransport, headers: [String: String]) {
+    public init(
+        server: RDMCPServer,
+        transport: any MCPTransport,
+        headers: [String: String],
+        protocolVersion: String? = nil
+    ) {
         self.server = server
         self.transport = transport
         self.headers = headers
+        // Streamable HTTP arrived with 2025-03-26; the current revision is
+        // 2026-07-28. The older SSE transport negotiates 2024-11-05.
+        self.protocolVersion = protocolVersion
+            ?? (server.transportKind == .sse ? "2024-11-05" : "2026-07-28")
     }
 
     public func connect() async throws -> MCPServerInfo {

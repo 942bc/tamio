@@ -36,9 +36,19 @@ public struct MCPServerOAuth: Codable, Equatable, Sendable {
     public var tokenEndpoint = ""
     public var registrationEndpoint = ""
     public var resource = ""
+    /// The issuer the discovery named, checked against the callback's `iss`.
+    public var issuer: String?
+    /// `none`, `client_secret_basic` or `client_secret_post`, as registered
+    /// (or picked by hand). Nil lets the token request decide from the secret.
+    public var tokenAuthMethod: String?
     public var accessToken = ""
     public var refreshToken = ""
     public var expiresAt: Date?
+
+    public var resolvedTokenAuthMethod: String {
+        if let tokenAuthMethod, !tokenAuthMethod.isEmpty { return tokenAuthMethod }
+        return clientSecret.isEmpty ? "none" : "client_secret_post"
+    }
 
     public var isSignedIn: Bool { !accessToken.isEmpty || !refreshToken.isEmpty }
 }

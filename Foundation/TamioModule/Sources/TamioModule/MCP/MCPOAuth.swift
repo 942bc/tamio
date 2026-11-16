@@ -13,7 +13,7 @@ import Foundation
 public struct MCPProtectedResourceMetadata: Codable, Equatable, Sendable {
     public var resource: String
     public var authorizationServers: [String]
-    public var scopesSupported: [String]
+    public var scopesSupported: [String]?
 
     enum CodingKeys: String, CodingKey {
         case resource
@@ -21,7 +21,7 @@ public struct MCPProtectedResourceMetadata: Codable, Equatable, Sendable {
         case scopesSupported = "scopes_supported"
     }
 
-    public init(resource: String = "", authorizationServers: [String] = [], scopesSupported: [String] = []) {
+    public init(resource: String = "", authorizationServers: [String] = [], scopesSupported: [String]? = nil) {
         self.resource = resource
         self.authorizationServers = authorizationServers
         self.scopesSupported = scopesSupported
@@ -32,8 +32,9 @@ public struct MCPAuthorizationServerMetadata: Codable, Equatable, Sendable {
     public var issuer: String
     public var authorizationEndpoint: String
     public var tokenEndpoint: String
-    public var registrationEndpoint: String
-    public var scopesSupported: [String]
+    public var registrationEndpoint: String?
+    public var scopesSupported: [String]?
+    public var tokenEndpointAuthMethodsSupported: [String]?
 
     enum CodingKeys: String, CodingKey {
         case issuer
@@ -41,20 +42,23 @@ public struct MCPAuthorizationServerMetadata: Codable, Equatable, Sendable {
         case tokenEndpoint = "token_endpoint"
         case registrationEndpoint = "registration_endpoint"
         case scopesSupported = "scopes_supported"
+        case tokenEndpointAuthMethodsSupported = "token_endpoint_auth_methods_supported"
     }
 
     public init(
         issuer: String = "",
         authorizationEndpoint: String = "",
         tokenEndpoint: String = "",
-        registrationEndpoint: String = "",
-        scopesSupported: [String] = []
+        registrationEndpoint: String? = nil,
+        scopesSupported: [String]? = nil,
+        tokenEndpointAuthMethodsSupported: [String]? = nil
     ) {
         self.issuer = issuer
         self.authorizationEndpoint = authorizationEndpoint
         self.tokenEndpoint = tokenEndpoint
         self.registrationEndpoint = registrationEndpoint
         self.scopesSupported = scopesSupported
+        self.tokenEndpointAuthMethodsSupported = tokenEndpointAuthMethodsSupported
     }
 }
 
@@ -145,45 +149,83 @@ public enum MCPOAuth {
         return url
     }
 
-    public static func registrationBody(redirectURI: String) throws -> Data {
-        try JSONEncoder().encode(JSONValue.object([
+    public static func registrationBody(
+        redirectURI: String,
+        scopes: [String] = [],
+        tokenAuthMethod: String = "none"
+    ) throws -> Data {
+        var object: [String: JSONValue] = [
             "client_name": .string("Tamio"),
             "redirect_uris": .array([.string(redirectURI)]),
             "grant_types": .array([.string("authorization_code"), .string("refresh_token")]),
             "response_types": .array([.string("code")]),
-            "token_endpoint_auth_method": .string("none"),
-        ]))
+            "token_endpoint_auth_method": .string(tokenAuthMethod),
+        ]
+        if !scopes.isEmpty {
+            object["scope"] = .string(scopes.joined(separator: " "))
+        }
+        return try JSONEncoder().encode(JSONValue.object(object))
     }
 
-    public static func codeRequestBody(
+    public struct TokenRequest: Sendable {
+        public var body: Data
+        public var authorization: String?
+
+        public init(body: Data, authorization: String? = nil) {
+            self.body = body
+            self.authorization = authorization
+        }
+    }
+
+    public static func codeRequest(
         code: String,
         oauth: MCPServerOAuth,
         pkce: MCPPKCE,
         redirectURI: String
-    ) -> Data {
+    ) -> TokenRequest {
         var items = [
             URLQueryItem(name: "grant_type", value: "authorization_code"),
             URLQueryItem(name: "code", value: code),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "client_id", value: oauth.clientID),
             URLQueryItem(name: "code_verifier", value: pkce.verifier),
         ]
-        if !oauth.clientSecret.isEmpty {
-            items.append(URLQueryItem(name: "client_secret", value: oauth.clientSecret))
+        if !oauth.resource.isEmpty {
+            items.append(URLQueryItem(name: "resource", value: oauth.resource))
         }
-        return formEncoded(items)
+        return tokenRequest(items: items, oauth: oauth)
     }
 
-    public static func refreshBody(oauth: MCPServerOAuth) -> Data {
+    public static func refreshRequest(oauth: MCPServerOAuth) -> TokenRequest {
         var items = [
             URLQueryItem(name: "grant_type", value: "refresh_token"),
             URLQueryItem(name: "refresh_token", value: oauth.refreshToken),
-            URLQueryItem(name: "client_id", value: oauth.clientID),
         ]
-        if !oauth.clientSecret.isEmpty {
+        if !oauth.resource.isEmpty {
+            items.append(URLQueryItem(name: "resource", value: oauth.resource))
+        }
+        return tokenRequest(items: items, oauth: oauth)
+    }
+
+    private static func tokenRequest(items: [URLQueryItem], oauth: MCPServerOAuth) -> TokenRequest {
+        let method = oauth.resolvedTokenAuthMethod
+        var items = items
+        if method == "client_secret_basic", !oauth.clientSecret.isEmpty {
+            items.append(URLQueryItem(name: "client_id", value: oauth.clientID))
+            let credentials = "\(formEncode(oauth.clientID)):\(formEncode(oauth.clientSecret))"
+            let authorization = "Basic " + Data(credentials.utf8).base64EncodedString()
+            return TokenRequest(body: formEncoded(items), authorization: authorization)
+        }
+        items.append(URLQueryItem(name: "client_id", value: oauth.clientID))
+        if method == "client_secret_post", !oauth.clientSecret.isEmpty {
             items.append(URLQueryItem(name: "client_secret", value: oauth.clientSecret))
         }
-        return formEncoded(items)
+        return TokenRequest(body: formEncoded(items))
+    }
+
+    private static func formEncode(_ value: String) -> String {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
     public static func tokens(from json: JSONValue) -> (accessToken: String, refreshToken: String, expiresAt: Date?) {

@@ -152,6 +152,18 @@ struct MCPServerEditorSheet: View {
                     .textFieldStyle(.rx)
                 SecureField("Client Secret (if required)", text: $oauth.clientSecret)
                     .textFieldStyle(.rx)
+                RXPicker(
+                    selection: Binding(
+                        get: { oauth.tokenAuthMethod ?? "" },
+                        set: { oauth.tokenAuthMethod = $0.isEmpty ? nil : $0 }
+                    ),
+                    options: [
+                        .init("", "Auto"),
+                        .init("none", "None"),
+                        .init("client_secret_basic", "Basic"),
+                        .init("client_secret_post", "Post"),
+                    ]
+                )
                 TextField("Scopes, separated by spaces", text: scopesText)
                     .textFieldStyle(.rx)
                 TextField("Authorization endpoint (optional)", text: $oauth.authorizationEndpoint)

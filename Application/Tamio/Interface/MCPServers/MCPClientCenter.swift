@@ -98,21 +98,70 @@ final class MCPClientCenter: ObservableObject {
 
     private func connectOnce(_ server: RDMCPServer) async throws {
         await disconnect(server.id)
-        states[server.id] = .connecting
-        let transport: any MCPTransport = server.transportKind == .sse
-            ? MCPSSETransport(label: server.displayName)
-            : MCPStreamableHTTPTransport(label: server.displayName)
-        let client = MCPClient(server: server, transport: transport, headers: Self.headers(for: server.auth))
-        transports[server.id] = transport
-        clients[server.id] = client
-        let info = try await client.connect()
-        let list = try await client.listTools()
-        states[server.id] = .ready(info)
-        serverInfo[server.id] = info
-        toolLists[server.id] = list
-        var updated = server
-        updated.lastConnected = Date()
-        TamioStore.shared.mcpServerGroup.insert(updated)
+        let versions = Self.protocolVersions(for: server)
+        var lastError: Error?
+        for (index, version) in versions.enumerated() {
+            states[server.id] = .connecting
+            let transport: any MCPTransport = server.transportKind == .sse
+                ? MCPSSETransport(label: server.displayName)
+                : MCPStreamableHTTPTransport(label: server.displayName)
+            let client = MCPClient(
+                server: server,
+                transport: transport,
+                headers: Self.headers(for: server.auth),
+                protocolVersion: version
+            )
+            transports[server.id] = transport
+            clients[server.id] = client
+            do {
+                let info = try await client.connect()
+                let list = try await client.listTools()
+                states[server.id] = .ready(info)
+                serverInfo[server.id] = info
+                toolLists[server.id] = list
+                var updated = server
+                updated.lastConnected = Date()
+                TamioStore.shared.mcpServerGroup.insert(updated)
+                return
+            } catch {
+                lastError = error
+                let more = index < versions.count - 1
+                if more, Self.isProtocolMismatch(error) {
+                    MCPDebugLog.shared.record(
+                        server: server.displayName,
+                        direction: .info,
+                        text: "Protocol \(version) refused; trying \(versions[index + 1])",
+                        channel: .app
+                    )
+                    await client.disconnect()
+                    clients[server.id] = nil
+                    transports[server.id] = nil
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError ?? MCPClientError.notConnected
+    }
+
+    private static func protocolVersions(for server: RDMCPServer) -> [String] {
+        server.transportKind == .sse
+            ? ["2024-11-05"]
+            : ["2026-07-28", "2025-06-18", "2025-03-26"]
+    }
+
+    private static func isProtocolMismatch(_ error: Error) -> Bool {
+        guard let error = error as? MCPClientError else { return false }
+        switch error {
+        case let .rpc(message):
+            let text = message.lowercased()
+            return text.contains("protocol") || text.contains("version")
+                || text.contains("mismatch") || text.contains("handshake")
+        case .http(400), .http(426):
+            return true
+        default:
+            return false
+        }
     }
 
     static func headers(for auth: MCPAuth) -> [String: String] {

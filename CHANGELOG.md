@@ -44,12 +44,19 @@ the user. To release, rename that heading to the version and date
   Enter saves the name, Esc leaves it as it was.
 - **The app icon is part of the source.** `Resources/AppIcon.icns` is used
   by builds whose SDK cannot compile Icon Composer's `.icon`.
+- **OAuth 2.1 dynamic registration is complete.** Dynamic client
+  registration sends the scopes and token authentication method the server
+  supports, token requests use Basic, Post or none as registered, discovery
+  falls back to OIDC, and a callback naming another issuer is refused.
 
 ### Fixed
 - **MCP servers using Streamable HTTP connect.** The client only spoke the
   older HTTP+SSE transport and waited for an endpoint event current servers
   never send; each server now has a Transport choice, Streamable HTTP by
   default.
+- **MCP servers on older protocol revisions connect.** The client tries
+  2026-07-28, 2025-06-18 and 2025-03-26 in turn (2024-11-05 for the older
+  SSE transport) and keeps the revision the server negotiates.
 - **MCP servers can use plain http:// addresses.** The editor only allowed
   HTTP to localhost; a development MCP server on the local network can now
   be saved and connected too.
